@@ -1,0 +1,15 @@
+{
+  "artists": [
+    "Tally",
+    "Alex",
+    "Jay",
+    "Lee",
+    "Emilia"
+  ],
+  "styles": [
+    "Line",
+    "Linework"
+  ],
+  "archived_artists": [],
+  "model_variant": "openai/clip-vit-base-patch32"
+}
