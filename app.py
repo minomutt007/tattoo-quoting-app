@@ -1,15 +1,19 @@
+
 import streamlit as st
 import pandas as pd
 import torch
 import os
 import json
-from datetime import date, timedelta
+import requests
+from datetime import date
 from PIL import Image
+from fpdf import FPDF
 from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
-from storage3.exceptions import StorageApiError  # Import for duplicate error handling
+from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
+APP_VERSION = "2.0.0 (Stable)"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -18,10 +22,10 @@ SUPABASE_URL = "https://ryessoqfbdbgluzedegt.supabase.co"
 SUPABASE_KEY = "YOUR_SUPABASE_KEY_HERE"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Ensure image directory exists
+LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
+
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
-# Optional image cropper
 try:
     from streamlit_cropper import st_cropper
     CROP_AVAILABLE = True
@@ -86,16 +90,76 @@ def save_logs(df):
 data = load_data()
 logs = load_logs()
 
+# ----------------------
+# Live Currency Conversion
+# ----------------------
+@st.cache_data(ttl=3600)
+def get_live_rates(base="ZAR"):
+    try:
+        response = requests.get(f"https://api.exchangerate.host/latest?base={base}")
+        if response.status_code == 200:
+            return response.json().get("rates", {})
+        else:
+            return {"USD": 0.055, "EUR": 0.051}
+    except Exception:
+        return {"USD": 0.055, "EUR": 0.051}
+
+def convert_price(price_zar, currency, rates):
+    return price_zar * rates.get(currency, 1)
+
+# ----------------------
+# PDF Generation
+# ----------------------
+def generate_pdf_report(image_path, top_matches, price_range, currency, converted_range):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Tattoo Quote Report", ln=True, align="C")
+    pdf.ln(10)
+    if os.path.exists(LOGO_PATH):
+        pdf.image(LOGO_PATH, x=80, y=25, w=50)
+        pdf.ln(40)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(0, 10, f"Date: {date.today()}", ln=True)
+    pdf.ln(5)
+    pdf.cell(0, 10, f"Price Range: R{price_range[0]} - R{price_range[1]}", ln=True)
+    if currency != "ZAR":
+        pdf.cell(0, 10, f"Converted Price Range: {currency} {converted_range[0]:.2f} - {currency} {converted_range[1]:.2f}", ln=True)
+    pdf.ln(10)
+    pdf.cell(0, 10, "Top Matches:", ln=True)
+    for _, row in top_matches.iterrows():
+        pdf.multi_cell(0, 10, f"{row['artist']} - {row['style']} | Price: R{row['price']} | Time: {row['time']} hrs")
+    if image_path and os.path.exists(image_path):
+        pdf.ln(10)
+        pdf.image(image_path, w=100)
+    output_path = os.path.join(IMAGE_DIR, "quote_report.pdf")
+    pdf.output(output_path)
+    return output_path
+
+# ----------------------
+# Quote Functionality
+# ----------------------
 def quote_tattoo():
     st.header("Quote Tattoo")
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, use_container_width=False, width=200)
+
     img = st.file_uploader("Upload Tattoo Image", type=["jpg","jpeg","png"])
     artist_filter = st.selectbox("Filter by Artist", ["All"] + settings["artists"])
+    compare_count = st.slider("Number of similar tattoos to compare", 1, 5, 3)
+    currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
+    rates = get_live_rates("ZAR")
+
     if img:
         image = Image.open(img).convert("RGB")
+        temp_path = os.path.join(IMAGE_DIR, "uploaded_image.png")
+        image.save(temp_path)
+
         if CROP_AVAILABLE:
             st.markdown("#### Crop Tattoo Region")
             image = st_cropper(image, box_color="blue", realtime_update=True)
         st.image(image, use_container_width=True)
+
         inputs = processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             q_feats = model.get_image_features(**inputs)
@@ -117,18 +181,36 @@ def quote_tattoo():
             dfm = pd.DataFrame(rows)
             dfm["sim"] = sims.tolist()
             dfm.sort_values("sim", ascending=False, inplace=True)
-            best = dfm.iloc[0]
-            st.subheader("Best Match")
-            st.write(f"Artist: {best['artist']}")
-            st.write(f"Style: {best['style']}")
-            st.write(f"Price: R{best['price']}")
-            st.write(f"Time: {best['time']} hrs")
-            st.image(os.path.join(IMAGE_DIR, best["filename"]), use_container_width=True)
-            new_log = pd.DataFrame({"date":[pd.to_datetime(date.today())], "artist":[best['artist']]})
+            top_matches = dfm.head(compare_count)
+            min_price = top_matches["price"].min()
+            max_price = top_matches["price"].max()
+
+            st.subheader("Top Matches")
+            st.write(f"**Price Range:** R{min_price} - R{max_price}")
+            converted_range = (convert_price(min_price, currency, rates), convert_price(max_price, currency, rates))
+            if currency != "ZAR":
+                st.write(f"**Converted Price Range:** {currency} {converted_range[0]:.2f} - {currency} {converted_range[1]:.2f}")
+
+            for _, match in top_matches.iterrows():
+                st.markdown(f"### {match['artist']} - {match['style']}")
+                st.write(f"Price: R{match['price']} ({currency} {convert_price(match['price'], currency, rates):.2f})")
+                st.write(f"Time: {match['time']} hrs")
+                st.image(os.path.join(IMAGE_DIR, match["filename"]), use_container_width=True)
+                st.markdown("---")
+
+            if st.button("📥 Download Quote Report (PDF)"):
+                pdf_path = generate_pdf_report(temp_path, top_matches, (min_price, max_price), currency, converted_range)
+                with open(pdf_path, "rb") as f:
+                    st.download_button("Download PDF", f, file_name="tattoo_quote_report.pdf")
+
+            new_log = pd.DataFrame({"date":[pd.to_datetime(date.today())], "artist":[top_matches.iloc[0]['artist']]})
             save_logs(pd.concat([logs, new_log], ignore_index=True))
         else:
             st.warning("No samples available.")
 
+# ----------------------
+# Supabase Upload
+# ----------------------
 def supabase_upload():
     st.header("📸 Upload Tattoo & Save Quote")
     artist = st.selectbox("Artist", ["Select an artist"] + settings["artists"])
@@ -147,7 +229,6 @@ def supabase_upload():
         with open(temp_path, "wb") as f:
             f.write(up.getbuffer())
         bucket = supabase.storage.from_("tattoo-images")
-        # Upload with overwrite (upsert)
         with open(temp_path, "rb") as f:
             bucket.upload(up.name, f, file_options={"upsert": True})
         url = bucket.get_public_url(up.name)
@@ -162,6 +243,9 @@ def supabase_upload():
         st.image(Image.open(temp_path), use_container_width=True)
         os.remove(temp_path)
 
+# ----------------------
+# Saved Tattoos
+# ----------------------
 def saved_tattoos():
     st.markdown("---")
     st.header("🖼️ Saved Tattoos")
@@ -176,15 +260,23 @@ def saved_tattoos():
     else:
         st.info("No tattoos saved yet.")
 
+# ----------------------
+# Settings & Reports
+# ----------------------
 def settings_page():
     st.header("App Settings")
-    # (Your settings logic here...)
+    st.info("Add your new settings features here for testing...")
 
 def reports_page():
     st.header("Match Reports")
-    # (Your reports logic here...)
+    st.info("Add your report testing code here...")
 
+# ----------------------
+# MAIN
+# ----------------------
 def main():
+    st.sidebar.markdown(f"**Version:** {APP_VERSION}")
+    st.sidebar.markdown("---")
     pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports"]
     choice=st.sidebar.radio("Navigate",pages)
     if choice=="Quote Tattoo":
