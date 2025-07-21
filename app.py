@@ -3,6 +3,7 @@ import pandas as pd
 import torch
 import os
 import json
+import requests
 from datetime import date, timedelta
 from PIL import Image
 from supabase import create_client
@@ -10,6 +11,7 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError  # Import for duplicate error handling
 
 # --- CONFIG ---
+APP_VERSION = "1.1.0 (DEV MODE - Enhanced Quotes)"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -17,6 +19,8 @@ LOGS_PATH = "match_logs.csv"
 SUPABASE_URL = "https://ryessoqfbdbgluzedegt.supabase.co"
 SUPABASE_KEY = "YOUR_SUPABASE_KEY_HERE"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
 
 # Ensure image directory exists
 os.makedirs(IMAGE_DIR, exist_ok=True)
@@ -86,10 +90,34 @@ def save_logs(df):
 data = load_data()
 logs = load_logs()
 
+# ----------------------
+# Live Currency Conversion
+# ----------------------
+@st.cache_data(ttl=3600)
+def get_live_rates(base="ZAR"):
+    try:
+        response = requests.get(f"https://api.exchangerate.host/latest?base={base}")
+        if response.status_code == 200:
+            return response.json().get("rates", {})
+        else:
+            return {"USD": 0.055, "EUR": 0.051}  # fallback static rates
+    except Exception:
+        return {"USD": 0.055, "EUR": 0.051}
+
+def convert_price(price_zar, currency, rates):
+    return price_zar * rates.get(currency, 1)
+
 def quote_tattoo():
-    st.header("Quote Tattoo")
+    st.header("Quote Tattoo (DEV - Enhanced Quotes)")
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, use_container_width=False, width=200)
+
     img = st.file_uploader("Upload Tattoo Image", type=["jpg","jpeg","png"])
     artist_filter = st.selectbox("Filter by Artist", ["All"] + settings["artists"])
+    compare_count = st.slider("Number of similar tattoos to compare", 1, 5, 3)
+    currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
+    rates = get_live_rates("ZAR")
+
     if img:
         image = Image.open(img).convert("RGB")
         if CROP_AVAILABLE:
@@ -117,20 +145,29 @@ def quote_tattoo():
             dfm = pd.DataFrame(rows)
             dfm["sim"] = sims.tolist()
             dfm.sort_values("sim", ascending=False, inplace=True)
-            best = dfm.iloc[0]
-            st.subheader("Best Match")
-            st.write(f"Artist: {best['artist']}")
-            st.write(f"Style: {best['style']}")
-            st.write(f"Price: R{best['price']}")
-            st.write(f"Time: {best['time']} hrs")
-            st.image(os.path.join(IMAGE_DIR, best["filename"]), use_container_width=True)
-            new_log = pd.DataFrame({"date":[pd.to_datetime(date.today())], "artist":[best['artist']]})
+            top_matches = dfm.head(compare_count)
+            min_price = top_matches["price"].min()
+            max_price = top_matches["price"].max()
+
+            st.subheader("Top Matches")
+            st.write(f"**Price Range:** R{min_price} - R{max_price}")
+            if currency != "ZAR":
+                st.write(f"**Converted Price Range:** {currency} {convert_price(min_price, currency, rates):.2f} - {currency} {convert_price(max_price, currency, rates):.2f}")
+
+            for _, match in top_matches.iterrows():
+                st.markdown(f"### {match['artist']} - {match['style']}")
+                st.write(f"Price: R{match['price']} ({currency} {convert_price(match['price'], currency, rates):.2f})")
+                st.write(f"Time: {match['time']} hrs")
+                st.image(os.path.join(IMAGE_DIR, match["filename"]), use_container_width=True)
+                st.markdown("---")
+
+            new_log = pd.DataFrame({"date":[pd.to_datetime(date.today())], "artist":[top_matches.iloc[0]['artist']]})
             save_logs(pd.concat([logs, new_log], ignore_index=True))
         else:
             st.warning("No samples available.")
 
 def supabase_upload():
-    st.header("📸 Upload Tattoo & Save Quote")
+    st.header("📸 Upload Tattoo & Save Quote (DEV)")
     artist = st.selectbox("Artist", ["Select an artist"] + settings["artists"])
     style  = st.selectbox("Style",  ["Select a style"]  + settings["styles"])
     price  = st.number_input("Estimated Price (R)", min_value=0)
@@ -147,7 +184,6 @@ def supabase_upload():
         with open(temp_path, "wb") as f:
             f.write(up.getbuffer())
         bucket = supabase.storage.from_("tattoo-images")
-        # Upload with overwrite (upsert)
         with open(temp_path, "rb") as f:
             bucket.upload(up.name, f, file_options={"upsert": True})
         url = bucket.get_public_url(up.name)
@@ -164,7 +200,7 @@ def supabase_upload():
 
 def saved_tattoos():
     st.markdown("---")
-    st.header("🖼️ Saved Tattoos")
+    st.header("🖼️ Saved Tattoos (DEV)")
     response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
     if response.data:
         for row in response.data:
@@ -177,15 +213,17 @@ def saved_tattoos():
         st.info("No tattoos saved yet.")
 
 def settings_page():
-    st.header("App Settings")
-    # (Your settings logic here...)
+    st.header("App Settings (DEV)")
+    st.info("Add your new settings features here for testing...")
 
 def reports_page():
-    st.header("Match Reports")
-    # (Your reports logic here...)
+    st.header("Match Reports (DEV)")
+    st.info("Add your report testing code here...")
 
 def main():
-    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports"]
+    st.sidebar.markdown(f"**Version:** {APP_VERSION}")
+    st.sidebar.markdown("---")
+    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports","New Feature Test"]
     choice=st.sidebar.radio("Navigate",pages)
     if choice=="Quote Tattoo":
         quote_tattoo()
@@ -195,6 +233,10 @@ def main():
         saved_tattoos()
     elif choice=="Settings":
         settings_page()
+    elif choice=="New Feature Test":
+        st.header("🚀 New Feature Playground")
+        st.write("This is where you can test experimental features safely.")
+        st.text_input("Try adding test UI here...")
     else:
         reports_page()
 
