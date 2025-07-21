@@ -1,0 +1,43 @@
+setup_git.bat
+
+@echo off
+echo =========================================
+echo Setting up Git for tattoo_quoting_app
+echo =========================================
+
+REM Change directory to your app folder
+cd /d "C:\Users\pauls\OneDrive\Working Files\tattoo_quoting_app"
+
+REM Initialize Git
+git init
+echo Git repository initialized.
+
+REM Add all files
+git add .
+git commit -m "Initial commit with app.py and app_dev.py"
+echo Files committed.
+
+REM Create main and dev branches
+git branch -M main
+git checkout -b dev
+echo Created and switched to dev branch.
+
+REM Create .gitignore file
+(
+echo .venv/
+echo __pycache__/
+echo *.pyc
+echo *.pyo
+echo *.pyd
+echo *.env
+echo .DS_Store
+) > .gitignore
+git add .gitignore
+git commit -m "Added .gitignore"
+echo .gitignore added.
+
+echo =========================================
+echo Git setup complete! You are now on the dev branch.
+echo =========================================
+
+pause
