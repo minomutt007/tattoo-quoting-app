@@ -11,13 +11,13 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError  # Import for duplicate error handling
 
 # --- CONFIG ---
-APP_VERSION = "1.1.0 (DEV MODE - Enhanced Quotes)"
+APP_VERSION = "1.1.0 (Enhanced Quotes)"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
 LOGS_PATH = "match_logs.csv"
 SUPABASE_URL = "https://ryessoqfbdbgluzedegt.supabase.co"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY_HERE"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5ZXNzb3FmYmRiZ2x1emVkZWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2NjgzMzYsImV4cCI6MjA2ODI0NDMzNn0.GRHnX0uMnIRZOLLTJhZ-Onek5YZmniweA4OjDBq8OzM"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -108,7 +108,7 @@ def convert_price(price_zar, currency, rates):
     return price_zar * rates.get(currency, 1)
 
 def quote_tattoo():
-    st.header("Quote Tattoo (DEV - Enhanced Quotes)")
+    st.header("Quote Tattoo")
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, use_container_width=False, width=200)
 
@@ -167,7 +167,7 @@ def quote_tattoo():
             st.warning("No samples available.")
 
 def supabase_upload():
-    st.header("📸 Upload Tattoo & Save Quote (DEV)")
+    st.header("📸 Upload Tattoo & Save Quote")
     artist = st.selectbox("Artist", ["Select an artist"] + settings["artists"])
     style  = st.selectbox("Style",  ["Select a style"]  + settings["styles"])
     price  = st.number_input("Estimated Price (R)", min_value=0)
@@ -200,7 +200,7 @@ def supabase_upload():
 
 def saved_tattoos():
     st.markdown("---")
-    st.header("🖼️ Saved Tattoos (DEV)")
+    st.header("🖼️ Saved Tattoos")
     response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
     if response.data:
         for row in response.data:
@@ -213,32 +213,9 @@ def saved_tattoos():
         st.info("No tattoos saved yet.")
 
 def settings_page():
-    st.header("App Settings (DEV)")
-    st.info("Add your new settings features here for testing...")
+    st.header("App Settings")
+    st.info("Add your settings features here.")
 
 def reports_page():
-    st.header("Match Reports (DEV)")
-    st.info("Add your report testing code here...")
-
-def main():
-    st.sidebar.markdown(f"**Version:** {APP_VERSION}")
-    st.sidebar.markdown("---")
-    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports","New Feature Test"]
-    choice=st.sidebar.radio("Navigate",pages)
-    if choice=="Quote Tattoo":
-        quote_tattoo()
-    elif choice=="Supabase Upload":
-        supabase_upload()
-    elif choice=="Saved Tattoos":
-        saved_tattoos()
-    elif choice=="Settings":
-        settings_page()
-    elif choice=="New Feature Test":
-        st.header("🚀 New Feature Playground")
-        st.write("This is where you can test experimental features safely.")
-        st.text_input("Try adding test UI here...")
-    else:
-        reports_page()
-
-if __name__=="__main__":
-    main()
+    st.header("Match Reports")
+    st.info("Add your reporting features here.")
