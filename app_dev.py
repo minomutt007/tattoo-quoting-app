@@ -1,4 +1,6 @@
+HEAD
 
+dev
 import streamlit as st
 import pandas as pd
 import torch
@@ -7,6 +9,7 @@ import json
 import requests
 from datetime import date, timedelta
 from PIL import Image
+<<<<<<< HEAD
 from fpdf import FPDF
 from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
@@ -14,6 +17,14 @@ from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
 APP_VERSION = "1.2.0 (DEV MODE - Enhanced Quotes + PDF)"
+=======
+from supabase import create_client
+from transformers import CLIPModel, CLIPProcessor
+from storage3.exceptions import StorageApiError  # Import for duplicate error handling
+
+# --- CONFIG ---
+APP_VERSION = "1.1.0 (DEV MODE - Enhanced Quotes)"
+>>>>>>> dev
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -24,14 +35,27 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
 
+<<<<<<< HEAD
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
+=======
+# Ensure image directory exists
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+# Optional image cropper
+>>>>>>> dev
 try:
     from streamlit_cropper import st_cropper
     CROP_AVAILABLE = True
 except ImportError:
     CROP_AVAILABLE = False
 
+<<<<<<< HEAD
+=======
+# ----------------------
+# Data & Model Loading
+# ----------------------
+>>>>>>> dev
 @st.cache_data
 def load_settings():
     if os.path.exists(SETTINGS_PATH):
@@ -87,6 +111,12 @@ def save_logs(df):
 data = load_data()
 logs = load_logs()
 
+<<<<<<< HEAD
+=======
+# ----------------------
+# Live Currency Conversion
+# ----------------------
+>>>>>>> dev
 @st.cache_data(ttl=3600)
 def get_live_rates(base="ZAR"):
     try:
@@ -94,13 +124,18 @@ def get_live_rates(base="ZAR"):
         if response.status_code == 200:
             return response.json().get("rates", {})
         else:
+<<<<<<< HEAD
             return {"USD": 0.055, "EUR": 0.051}
+=======
+            return {"USD": 0.055, "EUR": 0.051}  # fallback static rates
+>>>>>>> dev
     except Exception:
         return {"USD": 0.055, "EUR": 0.051}
 
 def convert_price(price_zar, currency, rates):
     return price_zar * rates.get(currency, 1)
 
+<<<<<<< HEAD
 def generate_pdf_report(image_path, top_matches, price_range, currency, converted_range):
     pdf = FPDF()
     pdf.add_page()
@@ -129,6 +164,10 @@ def generate_pdf_report(image_path, top_matches, price_range, currency, converte
 
 def quote_tattoo():
     st.header("Quote Tattoo (DEV - Enhanced Quotes + PDF)")
+=======
+def quote_tattoo():
+    st.header("Quote Tattoo (DEV - Enhanced Quotes)")
+>>>>>>> dev
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, use_container_width=False, width=200)
 
@@ -140,8 +179,11 @@ def quote_tattoo():
 
     if img:
         image = Image.open(img).convert("RGB")
+<<<<<<< HEAD
         temp_path = os.path.join(IMAGE_DIR, "uploaded_image.png")
         image.save(temp_path)
+=======
+>>>>>>> dev
         if CROP_AVAILABLE:
             st.markdown("#### Crop Tattoo Region")
             image = st_cropper(image, box_color="blue", realtime_update=True)
@@ -173,9 +215,14 @@ def quote_tattoo():
 
             st.subheader("Top Matches")
             st.write(f"**Price Range:** R{min_price} - R{max_price}")
+<<<<<<< HEAD
             converted_range = (convert_price(min_price, currency, rates), convert_price(max_price, currency, rates))
             if currency != "ZAR":
                 st.write(f"**Converted Price Range:** {currency} {converted_range[0]:.2f} - {currency} {converted_range[1]:.2f}")
+=======
+            if currency != "ZAR":
+                st.write(f"**Converted Price Range:** {currency} {convert_price(min_price, currency, rates):.2f} - {currency} {convert_price(max_price, currency, rates):.2f}")
+>>>>>>> dev
 
             for _, match in top_matches.iterrows():
                 st.markdown(f"### {match['artist']} - {match['style']}")
@@ -184,11 +231,14 @@ def quote_tattoo():
                 st.image(os.path.join(IMAGE_DIR, match["filename"]), use_container_width=True)
                 st.markdown("---")
 
+<<<<<<< HEAD
             if st.button("📥 Download Quote Report (PDF)"):
                 pdf_path = generate_pdf_report(temp_path, top_matches, (min_price, max_price), currency, converted_range)
                 with open(pdf_path, "rb") as f:
                     st.download_button("Download PDF", f, file_name="tattoo_quote_report.pdf")
 
+=======
+>>>>>>> dev
             new_log = pd.DataFrame({"date":[pd.to_datetime(date.today())], "artist":[top_matches.iloc[0]['artist']]})
             save_logs(pd.concat([logs, new_log], ignore_index=True))
         else:

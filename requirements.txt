@@ -1,8 +1,11 @@
 streamlit
 pandas
-torch
 Pillow
-supabase
+torch --extra-index-url https://download.pytorch.org/whl/cpu
 transformers
+supabase
 storage3
-streamlit-cropper
+python-dateutil
+
+
+
