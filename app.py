@@ -13,7 +13,7 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -23,7 +23,6 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
-
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 try:
@@ -199,6 +198,7 @@ def supabase_upload():
     price  = st.number_input("Estimated Price (R)", min_value=0)
     time_est = st.text_input("Time Estimate (e.g. 3 hours)")
     up = st.file_uploader("Upload Tattoo Image", type=["jpg","jpeg","png"])
+
     if st.button("Save to Supabase"):
         if artist == "Select an artist" or style == "Select a style":
             st.error("Please choose both artist and style.")
@@ -206,23 +206,37 @@ def supabase_upload():
         if not up:
             st.error("Please upload an image.")
             return
+
         temp_path = os.path.join(IMAGE_DIR, up.name)
         with open(temp_path, "wb") as f:
             f.write(up.getbuffer())
-        bucket = supabase.storage.from_("tattoo-images")
-        with open(temp_path, "rb") as f:
-            bucket.upload(up.name, f, {"upsert": "true"})
-        url = bucket.get_public_url(up.name)
-        supabase.table("tattoos").insert({
-            "artist": artist,
-            "style": style,
-            "price": price,
-            "time_estimate": time_est,
-            "image_url": url
-        }).execute()
-        st.success("Saved to Supabase! (overwritten if existed)")
-        st.image(Image.open(temp_path), use_container_width=True)
-        os.remove(temp_path)
+
+        try:
+            bucket = supabase.storage.from_("tattoo-images")
+            with open(temp_path, "rb") as f:
+                file_bytes = f.read()
+                bucket.upload(up.name, file_bytes, {"upsert": "true"})
+
+            url = bucket.get_public_url(up.name)
+
+            supabase.table("tattoos").insert({
+                "artist": artist,
+                "style": style,
+                "price": price,
+                "time_estimate": time_est,
+                "image_url": url
+            }).execute()
+
+            st.success(f"Saved '{up.name}' to Supabase!")
+            st.image(Image.open(temp_path), use_container_width=True)
+
+        except StorageApiError as e:
+            st.error(f"Supabase Storage Error: {e}")
+        except Exception as e:
+            st.error(f"Upload failed: {e}")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
 def saved_tattoos():
     st.markdown("---")
@@ -244,7 +258,6 @@ def saved_tattoos():
 def settings_page():
     st.header("App Settings")
 
-    # Artists Management
     st.subheader("Manage Artists")
     new_artist = st.text_input("Add New Artist")
     if st.button("Add Artist") and new_artist.strip():
@@ -263,7 +276,6 @@ def settings_page():
 
     st.markdown("---")
 
-    # Styles Management
     st.subheader("Manage Styles")
     new_style = st.text_input("Add New Style")
     if st.button("Add Style") and new_style.strip():
@@ -289,18 +301,14 @@ def reports_page():
 
     st.subheader("Summary Statistics")
     st.write(f"**Total Tattoos in DB:** {len(df)}")
-
     if 'artist' in df.columns:
         top_artist = df['artist'].value_counts().idxmax()
         st.write(f"**Most Quoted Artist:** {top_artist}")
-
     if 'style' in df.columns:
         top_style = df['style'].value_counts().idxmax()
         st.write(f"**Most Popular Style:** {top_style}")
-
     if 'price' in df.columns:
         st.write(f"**Average Price:** R{df['price'].mean():.2f}")
-
     if 'time' in df.columns:
         st.write(f"**Average Time:** {df['time'].mean():.1f} hrs")
 
