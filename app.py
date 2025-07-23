@@ -13,7 +13,7 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -213,9 +213,8 @@ def supabase_upload():
 
         try:
             bucket = supabase.storage.from_("tattoo-images")
-            with open(temp_path, "rb") as f:
-                file_bytes = f.read()
-                bucket.upload(up.name, file_bytes, {"upsert": "true"})
+            file_bytes = up.getvalue()
+            bucket.upload(up.name, file_bytes, {"content-type": "image/jpeg", "upsert": "true"})
 
             url = bucket.get_public_url(up.name)
 
@@ -237,6 +236,15 @@ def supabase_upload():
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+def check_supabase_connection():
+    st.header("🔍 Supabase Connection Check")
+    try:
+        response = supabase.table("tattoos").select("*").limit(1).execute()
+        st.success("Supabase connection successful!")
+        st.write(response.data)
+    except Exception as e:
+        st.error(f"Connection test failed: {e}")
 
 def saved_tattoos():
     st.markdown("---")
@@ -315,7 +323,7 @@ def reports_page():
 def main():
     st.sidebar.markdown(f"**Version:** {APP_VERSION}")
     st.sidebar.markdown("---")
-    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports"]
+    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports","Check Supabase"]
     choice=st.sidebar.radio("Navigate",pages)
     if choice=="Quote Tattoo":
         quote_tattoo()
@@ -325,6 +333,8 @@ def main():
         saved_tattoos()
     elif choice=="Settings":
         settings_page()
+    elif choice=="Check Supabase":
+        check_supabase_connection()
     else:
         reports_page()
 
