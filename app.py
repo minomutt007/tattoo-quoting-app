@@ -13,14 +13,15 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "1.2.1 (DEV MODE)"
+APP_VERSION = "1.2.1"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
 LOGS_PATH = "match_logs.csv"
-SUPABASE_URL = "https://ryessoqfbdbgluzedegt.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5ZXNzb3FmYmRiZ2x1emVkZWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2NjgzMzYsImV4cCI6MjA2ODI0NDMzNn0.GRHnX0uMnIRZOLLTJhZ-Onek5YZmniweA4OjDBq8OzM"
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Securely access the Supabase credentials from secrets.toml
+supabase_url = st.secrets["SUPABASE_URL"]
+supabase_key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(supabase_url, supabase_key)
 
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
 
@@ -137,7 +138,7 @@ def quote_tattoo():
 
         if CROP_AVAILABLE:
             st.write("Crop the tattoo image to focus on the design:")
-            cropped_img = st_cropper(image, realtime_update=True, box_color='#FF0004', aspect_ratio=None)
+            cropped_img = st_cropper(image, realtime_update=True, box_color="#0015FF", aspect_ratio=None)
             st.image(cropped_img, caption="Cropped Tattoo Image", use_container_width=True)
             image = cropped_img
 
