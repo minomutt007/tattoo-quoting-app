@@ -13,13 +13,13 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
 LOGS_PATH = "match_logs.csv"
 SUPABASE_URL = "https://ryessoqfbdbgluzedegt.supabase.co"
-SUPABASE_KEY = "YOUR_SUPABASE_KEY_HERE"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5ZXNzb3FmYmRiZ2x1emVkZWd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2NjgzMzYsImV4cCI6MjA2ODI0NDMzNn0.GRHnX0uMnIRZOLLTJhZ-Onek5YZmniweA4OjDBq8OzM"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -35,16 +35,12 @@ except ImportError:
 @st.cache_data
 def load_settings():
     if os.path.exists(SETTINGS_PATH):
-        settings = json.load(open(SETTINGS_PATH))
-        if not settings.get("model_variant"):
-            settings["model_variant"] = "openai/clip-vit-base-patch16"
-            json.dump(settings, open(SETTINGS_PATH, "w"), indent=2)
-        return settings
+        return json.load(open(SETTINGS_PATH))
     settings = {
-        "artists": [],
-        "styles": [],
+        "artists": ["Tally", "Alex", "Jay", "Lee", "Emilia"],
+        "styles": ["Line", "Linework"],
         "archived_artists": [],
-        "model_variant": "openai/clip-vit-base-patch16"
+        "model_variant": "openai/clip-vit-base-patch32"
     }
     json.dump(settings, open(SETTINGS_PATH, "w"), indent=2)
     return settings
@@ -62,15 +58,11 @@ with st.spinner("Loading CLIP model..."):
 
 @st.cache_data
 def load_data():
-    return pd.read_csv(CSV_PATH) if os.path.exists(CSV_PATH) else pd.DataFrame(
-        columns=["filename","artist","style","price","time"]
-    )
+    return pd.read_csv(CSV_PATH) if os.path.exists(CSV_PATH) else pd.DataFrame(columns=["filename","artist","style","price","time"])
 
 @st.cache_data
 def load_logs():
-    return pd.read_csv(LOGS_PATH, parse_dates=["date"]) if os.path.exists(LOGS_PATH) else pd.DataFrame(
-        columns=["date","artist"]
-    )
+    return pd.read_csv(LOGS_PATH, parse_dates=["date"]) if os.path.exists(LOGS_PATH) else pd.DataFrame(columns=["date","artist"])
 
 def save_settings(s):
     json.dump(s, open(SETTINGS_PATH, "w"), indent=2)
@@ -128,9 +120,9 @@ def generate_pdf_report(image_path, top_matches, price_range, currency, converte
     return output_path
 
 def quote_tattoo():
-    st.header("Quote Tattoo (DEV - Enhanced Quotes + PDF)")
+    st.header("Quote Tattoo")
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, use_container_width=False, width=200)
+        st.image(LOGO_PATH, use_container_width=True, width=200)
 
     img = st.file_uploader("Upload Tattoo Image", type=["jpg","jpeg","png"])
     artist_filter = st.selectbox("Filter by Artist", ["All"] + settings["artists"])
@@ -142,17 +134,22 @@ def quote_tattoo():
         image = Image.open(img).convert("RGB")
         temp_path = os.path.join(IMAGE_DIR, "uploaded_image.png")
         image.save(temp_path)
+
         if CROP_AVAILABLE:
-            st.markdown("#### Crop Tattoo Region")
-            image = st_cropper(image, box_color="blue", realtime_update=True)
-        st.image(image, use_container_width=True)
+            st.write("Crop the tattoo image to focus on the design:")
+            cropped_img = st_cropper(image, realtime_update=True, box_color='#FF0004', aspect_ratio=None)
+            st.image(cropped_img, caption="Cropped Tattoo Image", use_container_width=True)
+            image = cropped_img
+
         inputs = processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             q_feats = model.get_image_features(**inputs)
+
         df = load_data()
         df = df[~df["artist"].isin(settings.get("archived_artists", []))]
         if artist_filter != "All":
             df = df[df["artist"] == artist_filter]
+
         feats, rows = [], []
         for _, r in df.iterrows():
             path = os.path.join(IMAGE_DIR, r["filename"])
@@ -162,6 +159,7 @@ def quote_tattoo():
                 with torch.no_grad():
                     feats.append(model.get_image_features(**in_ref).squeeze(0))
                 rows.append(r)
+
         if feats:
             sims = torch.nn.functional.cosine_similarity(q_feats, torch.stack(feats))
             dfm = pd.DataFrame(rows)
@@ -229,29 +227,91 @@ def supabase_upload():
 def saved_tattoos():
     st.markdown("---")
     st.header("🖼️ Saved Tattoos (DEV)")
-    response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
-    if response.data:
-        for row in response.data:
-            st.subheader(f"{row['artist']} — {row['style']}")
-            st.image(row["image_url"], use_container_width=True)
-            st.write(f"💰 Price: R{row['price']}")
-            st.write(f"⏱️ Time Estimate: {row['time_estimate']}")
-            st.markdown("---")
-    else:
-        st.info("No tattoos saved yet.")
+    try:
+        response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
+        if response.data:
+            for row in response.data:
+                st.subheader(f"{row['artist']} — {row['style']}")
+                st.image(row["image_url"], use_container_width=True)
+                st.write(f"💰 Price: R{row['price']}")
+                st.write(f"⏱️ Time Estimate: {row['time_estimate']}")
+                st.markdown("---")
+        else:
+            st.info("No tattoos saved yet.")
+    except Exception as e:
+        st.error(f"Error fetching tattoos: {e}")
+
 
 def settings_page():
     st.header("App Settings (DEV)")
-    st.info("Add your new settings features here for testing...")
+
+    # Artists Management
+    st.subheader("Manage Artists")
+    new_artist = st.text_input("Add New Artist")
+    if st.button("Add Artist") and new_artist.strip():
+        if new_artist not in settings["artists"]:
+            settings["artists"].append(new_artist)
+            save_settings(settings)
+            st.success(f"Artist '{new_artist}' added!")
+        else:
+            st.warning(f"Artist '{new_artist}' already exists.")
+
+    selected_artist = st.selectbox("Select Artist to Remove", ["None"] + settings["artists"])
+    if st.button("Remove Artist") and selected_artist != "None":
+        settings["artists"].remove(selected_artist)
+        save_settings(settings)
+        st.success(f"Artist '{selected_artist}' removed!")
+
+    st.markdown("---")
+
+    # Styles Management
+    st.subheader("Manage Styles")
+    new_style = st.text_input("Add New Style")
+    if st.button("Add Style") and new_style.strip():
+        if new_style not in settings["styles"]:
+            settings["styles"].append(new_style)
+            save_settings(settings)
+            st.success(f"Style '{new_style}' added!")
+        else:
+            st.warning(f"Style '{new_style}' already exists.")
+
+    selected_style = st.selectbox("Select Style to Remove", ["None"] + settings["styles"])
+    if st.button("Remove Style") and selected_style != "None":
+        settings["styles"].remove(selected_style)
+        save_settings(settings)
+        st.success(f"Style '{selected_style}' removed!")
+
 
 def reports_page():
     st.header("Match Reports (DEV)")
-    st.info("Add your report testing code here...")
+    df = load_data()
+    if df.empty:
+        st.info("No data available to generate reports.")
+        return
+
+    st.subheader("Summary Statistics")
+    st.write(f"**Total Tattoos in DB:** {len(df)}")
+
+    if 'artist' in df.columns:
+        top_artist = df['artist'].value_counts().idxmax()
+        st.write(f"**Most Quoted Artist:** {top_artist}")
+
+    if 'style' in df.columns:
+        top_style = df['style'].value_counts().idxmax()
+        st.write(f"**Most Popular Style:** {top_style}")
+
+    if 'price' in df.columns:
+        st.write(f"**Average Price:** R{df['price'].mean():.2f}")
+
+    if 'time' in df.columns:
+        st.write(f"**Average Time:** {df['time'].mean():.1f} hrs")
+
+
 
 def main():
     st.sidebar.markdown(f"**Version:** {APP_VERSION}")
     st.sidebar.markdown("---")
-    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports","New Feature Test"]
+    pages=["Quote Tattoo","Supabase Upload","Saved Tattoos","Settings","Reports"]
     choice=st.sidebar.radio("Navigate",pages)
     if choice=="Quote Tattoo":
         quote_tattoo()
