@@ -7,7 +7,7 @@ supabase
 storage3
 python-dateutil
 fpdf
-
+requests
 
 
 
