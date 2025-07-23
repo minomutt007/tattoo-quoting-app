@@ -193,7 +193,7 @@ def quote_tattoo():
             st.warning("No samples available.")
 
 def supabase_upload():
-    st.header("📸 Upload Tattoo & Save Quote (DEV)")
+    st.header("📸 Upload Tattoo & Save Quote")
     artist = st.selectbox("Artist", ["Select an artist"] + settings["artists"])
     style  = st.selectbox("Style",  ["Select a style"]  + settings["styles"])
     price  = st.number_input("Estimated Price (R)", min_value=0)
@@ -211,7 +211,7 @@ def supabase_upload():
             f.write(up.getbuffer())
         bucket = supabase.storage.from_("tattoo-images")
         with open(temp_path, "rb") as f:
-            bucket.upload(up.name, f, file_options={"upsert": True})
+            bucket.upload(up.name, f, {"upsert": "true"})
         url = bucket.get_public_url(up.name)
         supabase.table("tattoos").insert({
             "artist": artist,
@@ -226,7 +226,7 @@ def supabase_upload():
 
 def saved_tattoos():
     st.markdown("---")
-    st.header("🖼️ Saved Tattoos (DEV)")
+    st.header("🖼️ Saved Tattoos")
     try:
         response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
         if response.data:
@@ -241,9 +241,8 @@ def saved_tattoos():
     except Exception as e:
         st.error(f"Error fetching tattoos: {e}")
 
-
 def settings_page():
-    st.header("App Settings (DEV)")
+    st.header("App Settings")
 
     # Artists Management
     st.subheader("Manage Artists")
@@ -281,9 +280,8 @@ def settings_page():
         save_settings(settings)
         st.success(f"Style '{selected_style}' removed!")
 
-
 def reports_page():
-    st.header("Match Reports (DEV)")
+    st.header("Match Reports")
     df = load_data()
     if df.empty:
         st.info("No data available to generate reports.")
@@ -305,8 +303,6 @@ def reports_page():
 
     if 'time' in df.columns:
         st.write(f"**Average Time:** {df['time'].mean():.1f} hrs")
-
-
 
 def main():
     st.sidebar.markdown(f"**Version:** {APP_VERSION}")
