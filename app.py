@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import torch
@@ -12,7 +13,7 @@ from transformers import CLIPModel, CLIPProcessor
 from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "1.2.0 (DEV MODE - Enhanced Quotes + PDF)"
+APP_VERSION = "1.2.0"
 CSV_PATH = "tattoos.csv"
 SETTINGS_PATH = "settings.json"
 IMAGE_DIR = "images"
@@ -36,14 +37,14 @@ def load_settings():
     if os.path.exists(SETTINGS_PATH):
         settings = json.load(open(SETTINGS_PATH))
         if not settings.get("model_variant"):
-            settings["model_variant"] = "openai/clip-vit-base-patch32"
+            settings["model_variant"] = "openai/clip-vit-base-patch16"
             json.dump(settings, open(SETTINGS_PATH, "w"), indent=2)
         return settings
     settings = {
         "artists": [],
         "styles": [],
         "archived_artists": [],
-        "model_variant": "openai/clip-vit-base-patch32"
+        "model_variant": "openai/clip-vit-base-patch16"
     }
     json.dump(settings, open(SETTINGS_PATH, "w"), indent=2)
     return settings
@@ -260,10 +261,6 @@ def main():
         saved_tattoos()
     elif choice=="Settings":
         settings_page()
-    elif choice=="New Feature Test":
-        st.header("🚀 New Feature Playground")
-        st.write("This is where you can test experimental features safely.")
-        st.text_input("Try adding test UI here...")
     else:
         reports_page()
 

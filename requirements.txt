@@ -8,6 +8,7 @@ storage3
 python-dateutil
 fpdf
 requests
+openai-clip
 
 
 

@@ -11,5 +11,5 @@
     "Linework"
   ],
   "archived_artists": [],
-  "model_variant": "openai/clip-vit-base-patch32"
+  "model_variant": "openai/clip-vit-base-patch16"
 }
