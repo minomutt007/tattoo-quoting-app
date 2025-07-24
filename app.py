@@ -87,7 +87,6 @@ def load_settings():
     }
     json.dump(settings, open(SETTINGS_PATH, "w"), indent=2)
     return settings
- main
 
 # This line should be right after the function definition
 settings = load_settings()
@@ -102,7 +101,6 @@ def load_clip_model():
 with st.spinner("Loading AI model..."):
     model, processor = load_clip_model()
 
- dev
 @st.cache_data(ttl=600) # Cache Supabase data for 10 minutes
 def load_data_from_supabase():
     # Fetches all tattoo data directly from Supabase, including pre-calculated embeddings.
@@ -240,7 +238,6 @@ def quote_tattoo():
     st.header("Quote Tattoo")
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, use_container_width=True, width=200)
- main
 
 def page_quote_tattoo():
     st.header("Quote Your Tattoo")
@@ -503,7 +500,7 @@ def supabase_upload():
 
 def saved_tattoos():
     st.markdown("---")
-    st.header("🖼️ Saved Tattoos (DEV)")
+    st.header("🖼️ Saved Tattoos")
     try:
         response = supabase.table("tattoos").select("*").order("created_at", desc=True).execute()
         if response.data:
@@ -520,7 +517,7 @@ def saved_tattoos():
 
 
 def settings_page():
-    st.header("App Settings (DEV)")
+    st.header("App Settings")
 
     # Artists Management
     st.subheader("Manage Artists")
