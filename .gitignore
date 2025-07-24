@@ -1,0 +1,5 @@
+.venv/
+*.bat
+@echo off
+__pycache__/
+*.pyc
