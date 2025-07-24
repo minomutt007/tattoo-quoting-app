@@ -12,7 +12,6 @@ from PIL import Image
 from fpdf import FPDF
 from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
- dev
 
 # --- CONFIG ---
 APP_VERSION = "2.1.0" # Updated version
