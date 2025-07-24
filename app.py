@@ -11,10 +11,9 @@ from PIL import Image
 from fpdf import FPDF
 from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
-from storage3.exceptions import StorageApiError
 
 # --- CONFIG ---
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.3.1"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -24,7 +23,7 @@ try:
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase = create_client(supabase_url, supabase_key)
-except KeyError:
+except (KeyError, AttributeError):
     st.error("Supabase credentials are not set in st.secrets. Please add them.")
     st.stop()
 
@@ -43,7 +42,6 @@ def load_settings():
     response = supabase.table("app_settings").select("setting_name, setting_value").execute()
     
     if not response.data:
-        # If the table is empty, create and insert default settings
         default_settings = {
             "artists": ["Tally", "Alex", "Jay"],
             "styles": ["Line", "Color", "Realism"],
@@ -53,7 +51,6 @@ def load_settings():
         supabase.table("app_settings").insert(records_to_insert).execute()
         return default_settings
 
-    # Convert the list of records into a single settings dictionary
     return {item['setting_name']: item['setting_value'] for item in response.data}
 
 settings = load_settings()
@@ -75,7 +72,6 @@ def load_data_from_supabase():
     df = pd.DataFrame(response.data)
     
     if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
-        # Convert string embedding back to numpy array for non-null values
         df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x)) if pd.notna(x) else None)
     else:
         df['embedding'] = None
@@ -87,7 +83,7 @@ def load_data_from_supabase():
 def save_settings(key, value):
     """Saves a specific setting to the Supabase table."""
     supabase.table("app_settings").update({"setting_value": value}).eq("setting_name", key).execute()
-    st.cache_data.clear() # Clear cache to force a reload of settings
+    st.cache_data.clear()
 
 @st.cache_data(ttl=3600) # Cache exchange rates for 1 hour
 def get_live_rates(base="ZAR"):
@@ -96,7 +92,7 @@ def get_live_rates(base="ZAR"):
         response.raise_for_status()
         return response.json().get("rates", {})
     except requests.RequestException:
-        return {"USD": 0.055, "EUR": 0.051} # Fallback rates
+        return {"USD": 0.055, "EUR": 0.051}
 
 def convert_price(price_zar, currency, rates):
     return price_zar * rates.get(currency, 1.0)
@@ -154,7 +150,6 @@ def page_quote_tattoo():
         
         st.image(image, caption="Your Tattoo Reference", use_container_width=True)
 
-        # Process and Compare
         inputs = processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             query_embedding = model.get_image_features(**inputs).squeeze(0)
@@ -164,7 +159,6 @@ def page_quote_tattoo():
         similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
         db['similarity'] = similarities.tolist()
 
-        # Display Results
         st.markdown("---")
         col1, col2 = st.columns(2)
         compare_count = col1.slider("Number of tattoos to compare", 1, 10, 3)
@@ -181,7 +175,6 @@ def page_quote_tattoo():
         if currency != "ZAR":
             st.metric(f"Converted Range ({currency})", f"{converted_range[0]:.2f} - {converted_range[1]:.2f}")
 
-        # PDF Download Button
         temp_path = os.path.join(IMAGE_DIR, "temp_uploaded.png")
         image.save(temp_path)
         pdf_path = generate_pdf_report(temp_path, top_matches, (min_price, max_price), currency, converted_range)
@@ -191,27 +184,47 @@ def page_quote_tattoo():
         for _, match in top_matches.iterrows():
             st.markdown("---")
             st.write(f"**Similarity Score:** {match['similarity']:.2f}")
-            st.image(match["image_url"], caption=f"Artist: {match['artist']}, Style: {match['style']}", use_container_width=True)
+            # --- THIS IS THE LINE THAT WAS CHANGED ---
+            st.image(match["image_url"], caption=f"Artist: {match['artist']}, Style: {match['style']}, Time: {match['time_hours']} hrs", use_container_width=True)
 
 def page_supabase_upload():
     st.header("📸 Upload New Tattoo")
-    with st.form("upload_form", clear_on_submit=True):
+    
+    uploaded_file = st.file_uploader("1. Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"])
+    
+    cropped_img = None
+    if uploaded_file:
+        img = Image.open(uploaded_file).convert("RGB")
+        if CROP_AVAILABLE:
+            st.write("2. Crop the image (optional)")
+            cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF", aspect_ratio=None)
+            st.image(cropped_img, caption="Cropped Image Preview", use_container_width=True)
+        else:
+            st.image(img, caption="Image Preview", use_container_width=True)
+
+    with st.form("upload_form"):
+        st.write("3. Enter Tattoo Details")
         artist = st.selectbox("Artist", settings.get("artists", []))
         style  = st.selectbox("Style", settings.get("styles", []))
         price  = st.number_input("Final Price (R)", min_value=0, step=100)
         time_hours = st.number_input("Time Taken (in hours)", min_value=0.5, step=0.5)
-        uploaded_file = st.file_uploader("Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"])
         
         submitted = st.form_submit_button("Save to Database")
 
         if submitted:
-            if not all([artist, style, price > 0, time_hours > 0, uploaded_file]):
-                st.error("Please fill out all fields and upload an image.")
+            image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
+
+            if not all([artist, style, price > 0, time_hours > 0, image_to_upload]):
+                st.error("Please upload an image and fill out all fields.")
                 return
             
             with st.spinner("Uploading and saving..."):
-                file_content = uploaded_file.getvalue()
-                file_name = f"{artist.replace(' ', '_')}_{date.today()}_{uploaded_file.name}"
+                buffer = BytesIO()
+                image_to_upload.save(buffer, format="PNG")
+                file_content = buffer.getvalue()
+
+                original_filename = uploaded_file.name if uploaded_file else "cropped_image.png"
+                file_name = f"{artist.replace(' ', '_')}_{date.today()}_{original_filename}"
                 
                 supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
                 image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
@@ -222,7 +235,7 @@ def page_supabase_upload():
                 }).execute()
             
                 st.success(f"Successfully saved tattoo by {artist}!")
-                st.image(file_content, caption="Uploaded Tattoo")
+                st.image(image_to_upload, caption="Uploaded Tattoo")
 
 def page_settings():
     st.header("⚙️ App Settings (Stored in Supabase)")
