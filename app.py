@@ -44,7 +44,6 @@ supabase = create_client(supabase_url, supabase_key)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
 
 os.makedirs(IMAGE_DIR, exist_ok=True)
- main
 
 try:
     from streamlit_cropper import st_cropper
