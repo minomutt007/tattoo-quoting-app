@@ -1,9 +1,15 @@
 streamlit
 pandas
-Pillow
-torch --extra-index-url https://download.pytorch.org/whl/cpu
+torch
 transformers
 supabase
+ dev
+fpdf
+streamlit-cropper
+numpy
+requests
+Pillow
+
 storage3
 python-dateutil
 fpdf
@@ -11,4 +17,5 @@ requests
 openai-clip
 
 
+ main
 
