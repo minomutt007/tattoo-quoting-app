@@ -164,12 +164,10 @@ def get_live_rates(base="ZAR"):
             return {"USD": 0.055, "EUR": 0.051}
     except Exception:
         return {"USD": 0.055, "EUR": 0.051}
- main
 
 def convert_price(price_zar, currency, rates):
     return price_zar * rates.get(currency, 1)
 
- dev
 def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency, converted_range):
     # Generates a PDF report for the tattoo quote.
     pdf = FPDF()
@@ -243,7 +241,6 @@ def page_quote_tattoo():
     st.header("Quote Your Tattoo")
     tattoo_data = load_data_from_supabase()
 
- dev
     if tattoo_data[tattoo_data['embedding'].notna()].empty:
         st.error("No reference tattoos with embeddings found in the database. Please run the embedding generation script.")
         return
