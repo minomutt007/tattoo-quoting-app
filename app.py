@@ -13,7 +13,7 @@ from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
 
 # --- CONFIG ---
-APP_VERSION = "2.3.1"
+APP_VERSION = "2.3.4"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -133,15 +133,33 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency,
 
 def page_quote_tattoo():
     st.header("Quote Your Tattoo")
-    tattoo_data = load_data_from_supabase()
-
-    if tattoo_data[tattoo_data['embedding'].notna()].empty:
-        st.info("No reference tattoos found in the database. Please upload tattoos and run the embedding generation script.")
-        return
-
+    
     uploaded_img = st.file_uploader("Upload a clear image of the tattoo or reference design", type=["jpg", "jpeg", "png"])
     
+    # --- THIS IS THE NEW SECTION ---
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        artist_filter = st.selectbox("Filter by Artist", ["All"] + settings.get("artists", []))
+    with col2:
+        compare_count = st.slider("Number to Compare", 1, 10, 3)
+    with col3:
+        currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
+    st.markdown("---")
+    # --- END OF NEW SECTION ---
+
     if uploaded_img:
+        tattoo_data = load_data_from_supabase()
+
+        # --- THIS IS THE NEW FILTERING LOGIC ---
+        if artist_filter != "All":
+            tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
+        
+        if tattoo_data[tattoo_data['embedding'].notna()].empty:
+            st.warning(f"No reference tattoos found for the selected filter ('{artist_filter}'). Please upload more tattoos or broaden your search.")
+            return
+        # --- END OF NEW FILTERING LOGIC ---
+
         image = Image.open(uploaded_img).convert("RGB")
         
         if CROP_AVAILABLE:
@@ -159,13 +177,12 @@ def page_quote_tattoo():
         similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
         db['similarity'] = similarities.tolist()
 
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        compare_count = col1.slider("Number of tattoos to compare", 1, 10, 3)
-        currency = col2.selectbox("Display Currency", ["ZAR", "USD", "EUR"])
-
         top_matches = db.sort_values("similarity", ascending=False).head(compare_count)
         
+        if top_matches.empty:
+            st.warning("Could not find any matching tattoos with the selected criteria.")
+            return
+
         min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
         rates = get_live_rates("ZAR")
         converted_range = (convert_price(min_price, currency, rates), convert_price(max_price, currency, rates))
@@ -184,7 +201,6 @@ def page_quote_tattoo():
         for _, match in top_matches.iterrows():
             st.markdown("---")
             st.write(f"**Similarity Score:** {match['similarity']:.2f}")
-            # --- THIS IS THE LINE THAT WAS CHANGED ---
             st.image(match["image_url"], caption=f"Artist: {match['artist']}, Style: {match['style']}, Time: {match['time_hours']} hrs", use_container_width=True)
 
 def page_supabase_upload():
