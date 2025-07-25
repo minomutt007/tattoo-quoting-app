@@ -148,7 +148,7 @@ def page_quote_tattoo():
 
     if uploaded_img:
         tattoo_data = load_data_from_supabase()
-        # Filtering logic...
+        # Filtering logic
         if not tattoo_data.empty and 'size_cm' in tattoo_data.columns:
             tattoo_data = tattoo_data[
                 (tattoo_data['size_cm'] >= size_range[0]) & 
@@ -166,7 +166,7 @@ def page_quote_tattoo():
         if CROP_AVAILABLE: image = st_cropper(image, realtime_update=True, box_color="#0015FF")
         st.image(image, caption="Your Tattoo Reference", use_container_width=True)
 
-        # AI Processing...
+        # AI Processing
         inputs = processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             query_embedding = model.get_image_features(**inputs).squeeze(0)
@@ -293,7 +293,7 @@ def page_batch_upload():
                     cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF", key=f"crop_{current_index}")
                     st.image(cropped_img, caption=f"Cropped Preview: {current_file.name}", use_container_width=True)
                 else:
-                    cropped_img = img # Fallback if cropper is not available
+                    cropped_img = img
                     st.image(img, caption=f"Image: {current_file.name}", use_container_width=True)
             
             with col2:
@@ -309,7 +309,7 @@ def page_batch_upload():
                     
                     if st.form_submit_button("✅ Save and Next"):
                         st.session_state.details[current_index] = details
-                        st.session_state.cropped_images[current_index] = cropped_img # Save the cropped PIL image
+                        st.session_state.cropped_images[current_index] = cropped_img
                         st.session_state.current_index += 1
                         st.rerun()
         else:
@@ -336,9 +336,7 @@ def page_batch_upload():
                     progress_bar.progress((i + 1) / total_files, text=f"Uploaded {original_file.name}")
 
                 st.success("Batch upload complete! Remember to run the embedding script.")
-                # Clean up session state
                 st.session_state.clear()
-
 
 def page_quote_history():
     st.header("📜 Quote History")
@@ -434,5 +432,4 @@ def main():
     st.sidebar.info(f"App Version: {APP_VERSION}")
 
 if __name__ == "__main__":
-    main()
     main()
