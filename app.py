@@ -279,7 +279,7 @@ def page_supabase_upload():
                 st.image(image_to_upload, caption="Uploaded Tattoo")
 
 def page_settings():
-    st.header("⚙️ App Settings (Stored in Supabase)")
+    st.header("⚙️ App Settings")
     st.subheader("Manage Artists")
     artists = settings.get("artists", [])
     new_artist = st.text_input("Add New Artist", key="new_artist")
