@@ -13,14 +13,12 @@ from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
 
 # --- CONFIG ---
-APP_VERSION = "2.6.0"
+APP_VERSION = "2.8.0"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
 
 # Define tattoo attributes for dropdowns
-TATTOO_SIZES = ["Small (Palm-sized)", "Medium (Hand-sized)", "Large (Forearm-sized)", "Extra Large (Backpiece)"]
-TATTOO_PLACEMENTS = ["Arm", "Leg", "Torso", "Back", "Neck", "Hands/Feet"]
 TATTOO_COLOR_TYPES = ["Black & Grey", "Full Color"]
 
 # --- SECURELY INITIALIZE SUPABASE ---
@@ -46,17 +44,27 @@ def load_settings():
     """Fetches settings from the 'app_settings' table in Supabase."""
     response = supabase.table("app_settings").select("setting_name, setting_value").execute()
     
-    if not response.data:
-        default_settings = {
-            "artists": ["Tally", "Alex", "Jay"],
-            "styles": ["Line", "Color", "Realism"],
-            "model_variant": "openai/clip-vit-base-patch32"
-        }
-        records_to_insert = [{"setting_name": k, "setting_value": v} for k, v in default_settings.items()]
-        supabase.table("app_settings").insert(records_to_insert).execute()
-        return default_settings
+    settings_data = {item['setting_name']: item['setting_value'] for item in response.data}
 
-    return {item['setting_name']: item['setting_value'] for item in response.data}
+    # Ensure default settings are created if they don't exist
+    if 'artists' not in settings_data:
+        default_artists = ["Tally", "Alex", "Jay"]
+        supabase.table("app_settings").insert({"setting_name": "artists", "setting_value": default_artists}).execute()
+        settings_data['artists'] = default_artists
+    if 'styles' not in settings_data:
+        default_styles = ["Line", "Color", "Realism"]
+        supabase.table("app_settings").insert({"setting_name": "styles", "setting_value": default_styles}).execute()
+        settings_data['styles'] = default_styles
+    if 'placements' not in settings_data:
+        default_placements = ["Arm", "Leg", "Torso", "Back"]
+        supabase.table("app_settings").insert({"setting_name": "placements", "setting_value": default_placements}).execute()
+        settings_data['placements'] = default_placements
+    if 'model_variant' not in settings_data:
+        model_variant = "openai/clip-vit-base-patch32"
+        supabase.table("app_settings").insert({"setting_name": "model_variant", "setting_value": model_variant}).execute()
+        settings_data['model_variant'] = model_variant
+        
+    return settings_data
 
 settings = load_settings()
 
@@ -73,7 +81,7 @@ with st.spinner("Loading AI model..."):
 @st.cache_data(ttl=600) # Cache tattoo data for 10 minutes
 def load_data_from_supabase():
     """Fetches tattoo data from Supabase, including pre-calculated embeddings."""
-    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size, placement, color_type").execute()
+    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size_cm, placement, color_type").execute()
     df = pd.DataFrame(response.data)
     
     if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
@@ -128,7 +136,7 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency,
 
     pdf.cell(0, 10, "Our Closest Matches:", ln=True)
     for _, row in top_matches.iterrows():
-         pdf.multi_cell(0, 8, f"- Artist: {row['artist']}, Style: {row['style']}, Size: {row.get('size', 'N/A')}\n  Placement: {row.get('placement', 'N/A')}, Color: {row.get('color_type', 'N/A')}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
+         pdf.multi_cell(0, 8, f"- Artist: {row['artist']}, Style: {row['style']}, Size: {row.get('size_cm', 'N/A')} cm\n  Placement: {row.get('placement', 'N/A')}, Color: {row.get('color_type', 'N/A')}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
     
     output_path = os.path.join(IMAGE_DIR, "quote_report.pdf")
     pdf.output(output_path)
@@ -143,28 +151,35 @@ def page_quote_tattoo():
     
     st.markdown("---")
     st.subheader("Filtering Options")
+    
+    size_min, size_max = 1.0, 40.0 # Define min/max possible size
+    size_range = st.slider(
+        "Filter by Size (cm)", 
+        min_value=size_min, 
+        max_value=size_max, 
+        value=(5.0, 15.0) # Default range
+    )
+
     col1, col2 = st.columns(2)
     with col1:
-        size_filter = st.selectbox("Size", ["All"] + TATTOO_SIZES)
         artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
+        placement_filter = st.selectbox("Body Placement", ["All"] + settings.get("placements", []))
     with col2:
-        placement_filter = st.selectbox("Body Placement", ["All"] + TATTOO_PLACEMENTS)
         color_filter = st.selectbox("Color Type", ["All"] + TATTOO_COLOR_TYPES)
+        compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3, key="compare_slider")
 
     st.subheader("Quote Settings")
-    colA, colB = st.columns(2)
-    with colA:
-        compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3)
-    with colB:
-        currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
+    currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
     st.markdown("---")
     
     if uploaded_img:
         tattoo_data = load_data_from_supabase()
 
         # Filter the data based on user's selections
-        if size_filter != "All":
-            tattoo_data = tattoo_data[tattoo_data['size'] == size_filter]
+        tattoo_data = tattoo_data[
+            (tattoo_data['size_cm'] >= size_range[0]) & 
+            (tattoo_data['size_cm'] <= size_range[1])
+        ]
         if artist_filter != "All":
             tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
         if placement_filter != "All":
@@ -219,7 +234,7 @@ def page_quote_tattoo():
             st.write(f"**Similarity Score:** {match['similarity']:.2f}")
             caption_text = (
                 f"Artist: {match['artist']}, Style: {match['style']}, "
-                f"Size: {match.get('size', 'N/A')}, Placement: {match.get('placement', 'N/A')}, "
+                f"Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, "
                 f"Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs"
             )
             st.image(match["image_url"], caption=caption_text, use_container_width=True)
@@ -243,8 +258,8 @@ def page_supabase_upload():
         st.write("3. Enter Tattoo Details")
         artist = st.selectbox("Artist", settings.get("artists", []))
         style  = st.selectbox("Style", settings.get("styles", []))
-        size   = st.selectbox("Size", TATTOO_SIZES)
-        placement = st.selectbox("Body Placement", TATTOO_PLACEMENTS)
+        size_cm   = st.number_input("Approximate Size (largest dimension in cm)", min_value=1.0, step=0.5)
+        placement = st.selectbox("Body Placement", settings.get("placements", []))
         color_type = st.selectbox("Color Type", TATTOO_COLOR_TYPES)
         price  = st.number_input("Final Price (R)", min_value=0, step=100)
         time_hours = st.number_input("Time Taken (in hours)", min_value=0.5, step=0.5)
@@ -254,7 +269,7 @@ def page_supabase_upload():
         if submitted:
             image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
 
-            if not all([artist, style, size, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
+            if not all([artist, style, size_cm > 0, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
                 st.error("Please upload an image and fill out all fields.")
                 return
             
@@ -271,7 +286,7 @@ def page_supabase_upload():
 
                 supabase.table("tattoos").insert({
                     "artist": artist, "style": style, "price": price, "time_hours": time_hours, 
-                    "image_url": image_url, "size": size, "placement": placement, "color_type": color_type
+                    "image_url": image_url, "size_cm": size_cm, "placement": placement, "color_type": color_type
                 }).execute()
             
                 st.success(f"Successfully saved tattoo by {artist}!")
@@ -315,6 +330,26 @@ def page_settings():
             styles.remove(style_to_remove)
             save_settings("styles", styles)
             st.success(f"Removed '{style_to_remove}'")
+            st.rerun()
+    st.markdown("---")
+
+    # --- NEW SECTION TO MANAGE BODY PLACEMENTS ---
+    st.subheader("Manage Body Placements")
+    placements = settings.get("placements", [])
+    new_placement = st.text_input("Add New Body Placement", key="new_placement")
+    if st.button("Add Placement"):
+        if new_placement and new_placement not in placements:
+            placements.append(new_placement)
+            save_settings("placements", placements)
+            st.success(f"Added '{new_placement}'")
+            st.rerun()
+
+    placement_to_remove = st.selectbox("Remove Body Placement", ["-"] + placements, key="remove_placement")
+    if st.button("Remove Placement"):
+        if placement_to_remove != "-":
+            placements.remove(placement_to_remove)
+            save_settings("placements", placements)
+            st.success(f"Removed '{placement_to_remove}'")
             st.rerun()
 
 # --- MAIN APP NAVIGATION ---
