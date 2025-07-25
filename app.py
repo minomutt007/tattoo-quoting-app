@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import torch
@@ -13,7 +14,7 @@ from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
 
 # --- CONFIG ---
-APP_VERSION = "3.1.0"
+APP_VERSION = "1.9.1"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -80,7 +81,7 @@ def load_data_from_supabase():
         df['embedding'] = None
     return df
 
-# --- HELPER FUNCTIONS (Omitted for brevity, they are the same as before) ---
+# --- HELPER FUNCTIONS ---
 def save_settings(key, value):
     """Saves a specific setting to the Supabase table."""
     supabase.table("app_settings").update({"setting_value": value}).eq("setting_name", key).execute()
@@ -99,6 +100,8 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency,
     pdf.cell(0, 8, f"Date: {date.today()}", ln=True)
     pdf.cell(0, 8, f"Estimated Price Range (ZAR): R{price_range[0]} - R{price_range[1]}", ln=True)
     if currency != "ZAR":
+        rates = get_live_rates("ZAR")
+        converted_range = (price_range[0] * rates.get(currency, 1), price_range[1] * rates.get(currency, 1))
         pdf.cell(0, 8, f"Converted Price ({currency}): {converted_range[0]:.2f} - {converted_range[1]:.2f}", ln=True)
     pdf.ln(10)
     pdf.set_font("Arial", "B", 12)
@@ -112,6 +115,15 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency,
     output_path = os.path.join(IMAGE_DIR, "quote_report.pdf")
     pdf.output(output_path)
     return output_path
+
+@st.cache_data(ttl=3600)
+def get_live_rates(base="ZAR"):
+    try:
+        response = requests.get(f"https://api.exchangerate.host/latest?base={base}")
+        response.raise_for_status()
+        return response.json().get("rates", {})
+    except requests.RequestException:
+        return {"USD": 0.055, "EUR": 0.051}
 
 # --- APP PAGES ---
 
@@ -228,13 +240,28 @@ def page_supabase_upload():
         
         submitted = st.form_submit_button("Save to Database")
         if submitted:
-            # Logic for saving a single tattoo
-            # (Omitted for brevity, same as previous version)
+            image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
+            if not all([artist, style, size_cm > 0, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
+                st.error("Please upload an image and fill out all fields.")
+                return
+            with st.spinner("Uploading and saving..."):
+                buffer = BytesIO()
+                image_to_upload.save(buffer, format="PNG")
+                file_content = buffer.getvalue()
+                original_filename = uploaded_file.name if uploaded_file else "cropped_image.png"
+                file_name = f"{artist.replace(' ', '_')}_{date.today()}_{original_filename}"
+                supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
+                image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
+                supabase.table("tattoos").insert({
+                    "artist": artist, "style": style, "price": price, "time_hours": time_hours, 
+                    "image_url": image_url, "size_cm": size_cm, "placement": placement, "color_type": color_type
+                }).execute()
+                st.success(f"Successfully saved tattoo by {artist}!")
+                st.image(image_to_upload, caption="Uploaded Tattoo")
 
 def page_batch_upload():
     st.header("📦 Batch Upload Tattoos")
 
-    # Step 1: File Uploader
     uploaded_files = st.file_uploader(
         "1. Upload all tattoo images for this session", 
         type=["jpg", "jpeg", "png"], 
@@ -242,40 +269,37 @@ def page_batch_upload():
     )
 
     if uploaded_files:
-        # Initialize session state if files are uploaded
         if 'batch_files' not in st.session_state or st.session_state.batch_files != uploaded_files:
             st.session_state.batch_files = uploaded_files
             st.session_state.details = [{} for _ in uploaded_files]
             st.session_state.current_index = 0
 
         total_files = len(st.session_state.batch_files)
-        st.write(f"--- \n### 2. Enter Details for Each Image ({st.session_state.current_index + 1} of {total_files})")
+        current_index = st.session_state.current_index
         
-        # Display progress and current image
-        if st.session_state.current_index < total_files:
-            current_file = st.session_state.batch_files[st.session_state.current_index]
+        if current_index < total_files:
+            st.write(f"--- \n### 2. Enter Details for Image {current_index + 1} of {total_files}")
+            current_file = st.session_state.batch_files[current_index]
             img = Image.open(current_file).convert("RGB")
             
             col1, col2 = st.columns(2)
             with col1:
                 st.image(img, use_container_width=True, caption=f"Editing: {current_file.name}")
             with col2:
-                with st.form(f"detail_form_{st.session_state.current_index}", clear_on_submit=True):
+                with st.form(f"detail_form_{current_index}", clear_on_submit=True):
                     details = {}
-                    details['artist'] = st.selectbox("Artist", settings.get("artists", []), key=f"art_{st.session_state.current_index}")
-                    details['style']  = st.selectbox("Style", settings.get("styles", []), key=f"sty_{st.session_state.current_index}")
-                    details['size_cm'] = st.number_input("Size (cm)", min_value=1.0, step=0.5, key=f"siz_{st.session_state.current_index}")
-                    details['placement'] = st.selectbox("Placement", settings.get("placements", []), key=f"pla_{st.session_state.current_index}")
-                    details['color_type'] = st.selectbox("Color", TATTOO_COLOR_TYPES, key=f"col_{st.session_state.current_index}")
-                    details['price'] = st.number_input("Price (R)", min_value=0, step=100, key=f"pri_{st.session_state.current_index}")
-                    details['time_hours'] = st.number_input("Time (hrs)", min_value=0.5, step=0.5, key=f"tim_{st.session_state.current_index}")
+                    details['artist'] = st.selectbox("Artist", settings.get("artists", []), key=f"art_{current_index}")
+                    details['style']  = st.selectbox("Style", settings.get("styles", []), key=f"sty_{current_index}")
+                    details['size_cm'] = st.number_input("Size (cm)", min_value=1.0, step=0.5, key=f"siz_{current_index}")
+                    details['placement'] = st.selectbox("Placement", settings.get("placements", []), key=f"pla_{current_index}")
+                    details['color_type'] = st.selectbox("Color", TATTOO_COLOR_TYPES, key=f"col_{current_index}")
+                    details['price'] = st.number_input("Price (R)", min_value=0, step=100, key=f"pri_{current_index}")
+                    details['time_hours'] = st.number_input("Time (hrs)", min_value=0.5, step=0.5, key=f"tim_{current_index}")
                     
                     if st.form_submit_button("✅ Save and Next"):
-                        st.session_state.details[st.session_state.current_index] = details
+                        st.session_state.details[current_index] = details
                         st.session_state.current_index += 1
                         st.rerun()
-
-        # Step 3: Final Upload
         else:
             st.success("All details entered! Ready to upload to Supabase.")
             if st.button("🚀 Save All to Supabase"):
@@ -297,7 +321,6 @@ def page_batch_upload():
                     progress_bar.progress((i + 1) / total_files, text=f"Uploaded {file.name}")
 
                 st.success("Batch upload complete! Remember to run the embedding script.")
-                # Clean up session state
                 del st.session_state.batch_files
                 del st.session_state.details
                 del st.session_state.current_index
@@ -323,7 +346,57 @@ def page_quote_history():
             st.write(f"**Quoted Range:** {row['final_price_range']}")
 
 def page_settings():
-    # Settings page logic (Omitted for brevity, same as previous version)
+    st.header("⚙️ App Settings (Stored in Supabase)")
+    st.subheader("Manage Artists")
+    artists = settings.get("artists", [])
+    new_artist = st.text_input("Add New Artist", key="new_artist")
+    if st.button("Add Artist"):
+        if new_artist and new_artist not in artists:
+            artists.append(new_artist)
+            save_settings("artists", artists)
+            st.success(f"Added '{new_artist}'")
+            st.rerun()
+    artist_to_remove = st.selectbox("Remove Artist", ["-"] + artists, key="remove_artist")
+    if st.button("Remove Artist"):
+        if artist_to_remove != "-":
+            artists.remove(artist_to_remove)
+            save_settings("artists", artists)
+            st.success(f"Removed '{artist_to_remove}'")
+            st.rerun()
+    st.markdown("---")
+    st.subheader("Manage Styles")
+    styles = settings.get("styles", [])
+    new_style = st.text_input("Add New Style", key="new_style")
+    if st.button("Add Style"):
+        if new_style and new_style not in styles:
+            styles.append(new_style)
+            save_settings("styles", styles)
+            st.success(f"Added '{new_style}'")
+            st.rerun()
+    style_to_remove = st.selectbox("Remove Style", ["-"] + styles, key="remove_style")
+    if st.button("Remove Style"):
+        if style_to_remove != "-":
+            styles.remove(style_to_remove)
+            save_settings("styles", styles)
+            st.success(f"Removed '{style_to_remove}'")
+            st.rerun()
+    st.markdown("---")
+    st.subheader("Manage Body Placements")
+    placements = settings.get("placements", [])
+    new_placement = st.text_input("Add New Body Placement", key="new_placement")
+    if st.button("Add Placement"):
+        if new_placement and new_placement not in placements:
+            placements.append(new_placement)
+            save_settings("placements", placements)
+            st.success(f"Added '{new_placement}'")
+            st.rerun()
+    placement_to_remove = st.selectbox("Remove Body Placement", ["-"] + placements, key="remove_placement")
+    if st.button("Remove Placement"):
+        if placement_to_remove != "-":
+            placements.remove(placement_to_remove)
+            save_settings("placements", placements)
+            st.success(f"Removed '{placement_to_remove}'")
+            st.rerun()
 
 # --- MAIN APP NAVIGATION ---
 def main():
@@ -335,7 +408,7 @@ def main():
         "Quote Tattoo": page_quote_tattoo,
         "Quote History": page_quote_history,
         "Upload Single Tattoo": page_supabase_upload,
-        "Batch Upload": page_batch_upload, # <-- NEW PAGE
+        "Batch Upload": page_batch_upload,
         "Settings": page_settings,
     }
     
@@ -347,3 +420,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
