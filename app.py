@@ -13,7 +13,7 @@ from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
 
 # --- CONFIG ---
-APP_VERSION = "2.8.0"
+APP_VERSION = "1.8.0"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
