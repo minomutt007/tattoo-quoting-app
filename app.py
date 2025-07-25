@@ -11,9 +11,10 @@ from PIL import Image
 from fpdf import FPDF
 from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
+from auth import show_login_form, logout_user # <-- NEW IMPORT
 
 # --- CONFIG ---
-APP_VERSION = "1.9.2"
+APP_VERSION = "4.0.0 (Secure)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -38,8 +39,7 @@ except ImportError:
     CROP_AVAILABLE = False
 
 # --- DATA & MODEL LOADING ---
-
-@st.cache_data(ttl=300) # Cache settings for 5 minutes
+@st.cache_data(ttl=300)
 def load_settings():
     """Fetches settings from the 'app_settings' table in Supabase."""
     response = supabase.table("app_settings").select("setting_name, setting_value").execute()
@@ -68,12 +68,11 @@ def load_clip_model():
 with st.spinner("Loading AI model..."):
     model, processor = load_clip_model()
 
-@st.cache_data(ttl=600) # Cache tattoo data for 10 minutes
+@st.cache_data(ttl=600)
 def load_data_from_supabase():
     """Fetches tattoo data from Supabase, including pre-calculated embeddings."""
     response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size_cm, placement, color_type").execute()
     df = pd.DataFrame(response.data)
-    
     if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
         df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x)) if pd.notna(x) else None)
     else:
@@ -86,7 +85,7 @@ def save_settings(key, value):
     supabase.table("app_settings").update({"setting_value": value}).eq("setting_name", key).execute()
     st.cache_data.clear()
 
-def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency, converted_range):
+def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency):
     """Generates a PDF report for the tattoo quote."""
     pdf = FPDF()
     pdf.add_page()
@@ -125,19 +124,14 @@ def get_live_rates(base="ZAR"):
         return {"USD": 0.055, "EUR": 0.051}
 
 # --- APP PAGES ---
-
 def page_quote_tattoo():
     st.header("Quote Your Tattoo")
-    
     customer_name = st.text_input("Customer Name (Optional)")
     uploaded_img = st.file_uploader("Upload a clear image of the tattoo or reference design", type=["jpg", "jpeg", "png"])
-    
     st.markdown("---")
     st.subheader("Filtering Options")
-    
     size_min, size_max = 1.0, 40.0
     size_range = st.slider("Filter by Size (cm)", min_value=size_min, max_value=size_max, value=(5.0, 15.0))
-
     col1, col2 = st.columns(2)
     with col1:
         artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
@@ -148,12 +142,8 @@ def page_quote_tattoo():
 
     if uploaded_img:
         tattoo_data = load_data_from_supabase()
-        # Filtering logic
         if not tattoo_data.empty and 'size_cm' in tattoo_data.columns:
-            tattoo_data = tattoo_data[
-                (tattoo_data['size_cm'] >= size_range[0]) & 
-                (tattoo_data['size_cm'] <= size_range[1])
-            ]
+            tattoo_data = tattoo_data[(tattoo_data['size_cm'] >= size_range[0]) & (tattoo_data['size_cm'] <= size_range[1])]
         if artist_filter != "All": tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
         if placement_filter != "All": tattoo_data = tattoo_data[tattoo_data['placement'] == placement_filter]
         if color_filter != "All": tattoo_data = tattoo_data[tattoo_data['color_type'] == color_filter]
@@ -166,7 +156,6 @@ def page_quote_tattoo():
         if CROP_AVAILABLE: image = st_cropper(image, realtime_update=True, box_color="#0015FF")
         st.image(image, caption="Your Tattoo Reference", use_container_width=True)
 
-        # AI Processing
         inputs = processor(images=image, return_tensors="pt", padding=True)
         with torch.no_grad():
             query_embedding = model.get_image_features(**inputs).squeeze(0)
@@ -181,10 +170,8 @@ def page_quote_tattoo():
             return
 
         min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
-        
         st.markdown("---")
         st.subheader("Final Quote")
-        
         colA, colB = st.columns(2)
         final_min_price = colA.number_input("Final Minimum Price (R)", value=int(min_price))
         final_max_price = colB.number_input("Final Maximum Price (R)", value=int(max_price))
@@ -196,15 +183,9 @@ def page_quote_tattoo():
                 image.save(buffer, format="PNG")
                 ref_image_content = buffer.getvalue()
                 ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
-                
                 supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
                 ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
-
-                supabase.table("quotes").insert({
-                    "customer_name": customer_name if customer_name else "N/A",
-                    "reference_image_url": ref_image_url,
-                    "final_price_range": final_price_range_str
-                }).execute()
+                supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
                 st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
 
         with st.expander("Show AI Top Matches"):
@@ -214,129 +195,6 @@ def page_quote_tattoo():
                                 f"Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, "
                                 f"Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs")
                 st.image(match["image_url"], caption=caption_text, use_container_width=True)
-
-def page_supabase_upload():
-    st.header("📸 Upload Single Tattoo")
-    st.info("For uploading multiple tattoos at once, please use the 'Batch Upload' page.")
-    
-    uploaded_file = st.file_uploader("1. Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"])
-    
-    cropped_img = None
-    if uploaded_file:
-        img = Image.open(uploaded_file).convert("RGB")
-        if CROP_AVAILABLE:
-            st.write("2. Crop the image (optional)")
-            cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF")
-            st.image(cropped_img, caption="Cropped Image Preview", use_container_width=True)
-        else:
-            st.image(img, caption="Image Preview", use_container_width=True)
-
-    with st.form("upload_form"):
-        st.write("3. Enter Tattoo Details")
-        artist = st.selectbox("Artist", settings.get("artists", []))
-        style  = st.selectbox("Style", settings.get("styles", []))
-        size_cm   = st.number_input("Approximate Size (cm)", min_value=1.0, step=0.5)
-        placement = st.selectbox("Body Placement", settings.get("placements", []))
-        color_type = st.selectbox("Color Type", TATTOO_COLOR_TYPES)
-        price  = st.number_input("Final Price (R)", min_value=0, step=100)
-        time_hours = st.number_input("Time Taken (in hours)", min_value=0.5, step=0.5)
-        
-        submitted = st.form_submit_button("Save to Database")
-        if submitted:
-            image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
-            if not all([artist, style, size_cm > 0, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
-                st.error("Please upload an image and fill out all fields.")
-                return
-            with st.spinner("Uploading and saving..."):
-                buffer = BytesIO()
-                image_to_upload.save(buffer, format="PNG")
-                file_content = buffer.getvalue()
-                original_filename = uploaded_file.name if uploaded_file else "cropped_image.png"
-                file_name = f"{artist.replace(' ', '_')}_{date.today()}_{original_filename}"
-                supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
-                image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
-                supabase.table("tattoos").insert({
-                    "artist": artist, "style": style, "price": price, "time_hours": time_hours, 
-                    "image_url": image_url, "size_cm": size_cm, "placement": placement, "color_type": color_type
-                }).execute()
-                st.success(f"Successfully saved tattoo by {artist}!")
-                st.image(image_to_upload, caption="Uploaded Tattoo")
-
-def page_batch_upload():
-    st.header("📦 Batch Upload Tattoos")
-
-    uploaded_files = st.file_uploader(
-        "1. Upload all tattoo images for this session", 
-        type=["jpg", "jpeg", "png"], 
-        accept_multiple_files=True
-    )
-
-    if uploaded_files:
-        if 'batch_files' not in st.session_state or st.session_state.batch_files != uploaded_files:
-            st.session_state.batch_files = uploaded_files
-            st.session_state.details = [{} for _ in uploaded_files]
-            st.session_state.current_index = 0
-            st.session_state.cropped_images = [None] * len(uploaded_files) # To store PIL images
-
-        total_files = len(st.session_state.batch_files)
-        current_index = st.session_state.current_index
-        
-        if current_index < total_files:
-            st.write(f"--- \n### 2. Crop and Enter Details for Image {current_index + 1} of {total_files}")
-            
-            current_file = st.session_state.batch_files[current_index]
-            img = Image.open(current_file).convert("RGB")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if CROP_AVAILABLE:
-                    cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF", key=f"crop_{current_index}")
-                    st.image(cropped_img, caption=f"Cropped Preview: {current_file.name}", use_container_width=True)
-                else:
-                    cropped_img = img
-                    st.image(img, caption=f"Image: {current_file.name}", use_container_width=True)
-            
-            with col2:
-                with st.form(f"detail_form_{current_index}", clear_on_submit=True):
-                    details = {}
-                    details['artist'] = st.selectbox("Artist", settings.get("artists", []), key=f"art_{current_index}")
-                    details['style']  = st.selectbox("Style", settings.get("styles", []), key=f"sty_{current_index}")
-                    details['size_cm'] = st.number_input("Size (cm)", min_value=1.0, step=0.5, key=f"siz_{current_index}")
-                    details['placement'] = st.selectbox("Placement", settings.get("placements", []), key=f"pla_{current_index}")
-                    details['color_type'] = st.selectbox("Color", TATTOO_COLOR_TYPES, key=f"col_{current_index}")
-                    details['price'] = st.number_input("Price (R)", min_value=0, step=100, key=f"pri_{current_index}")
-                    details['time_hours'] = st.number_input("Time (hrs)", min_value=0.5, step=0.5, key=f"tim_{current_index}")
-                    
-                    if st.form_submit_button("✅ Save and Next"):
-                        st.session_state.details[current_index] = details
-                        st.session_state.cropped_images[current_index] = cropped_img
-                        st.session_state.current_index += 1
-                        st.rerun()
-        else:
-            st.success("All details entered! Ready to upload to Supabase.")
-            if st.button("🚀 Save All to Supabase"):
-                progress_bar = st.progress(0, text="Uploading...")
-                for i in range(total_files):
-                    original_file = st.session_state.batch_files[i]
-                    detail = st.session_state.details[i]
-                    cropped_image = st.session_state.cropped_images[i]
-                    
-                    with st.spinner(f"Uploading {original_file.name}..."):
-                        buffer = BytesIO()
-                        cropped_image.save(buffer, format="PNG")
-                        file_content = buffer.getvalue()
-                        file_name = f"{detail['artist'].replace(' ', '_')}_{date.today()}_{original_file.name}"
-                        
-                        supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
-                        image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
-                        
-                        detail['image_url'] = image_url
-                        supabase.table("tattoos").insert(detail).execute()
-                    
-                    progress_bar.progress((i + 1) / total_files, text=f"Uploaded {original_file.name}")
-
-                st.success("Batch upload complete! Remember to run the embedding script.")
-                st.session_state.clear()
 
 def page_quote_history():
     st.header("📜 Quote History")
@@ -357,6 +215,105 @@ def page_quote_history():
             st.write(f"**Customer:** {row['customer_name']}")
             st.write(f"**Date:** {pd.to_datetime(row['quote_date']).strftime('%Y-%m-%d')}")
             st.write(f"**Quoted Range:** {row['final_price_range']}")
+
+def page_supabase_upload():
+    st.header("📸 Upload Single Tattoo")
+    st.info("For uploading multiple tattoos at once, please use the 'Batch Upload' page.")
+    uploaded_file = st.file_uploader("1. Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"])
+    cropped_img = None
+    if uploaded_file:
+        img = Image.open(uploaded_file).convert("RGB")
+        if CROP_AVAILABLE:
+            st.write("2. Crop the image (optional)")
+            cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF")
+            st.image(cropped_img, caption="Cropped Image Preview", use_container_width=True)
+        else:
+            st.image(img, caption="Image Preview", use_container_width=True)
+    with st.form("upload_form"):
+        st.write("3. Enter Tattoo Details")
+        artist = st.selectbox("Artist", settings.get("artists", []))
+        style  = st.selectbox("Style", settings.get("styles", []))
+        size_cm   = st.number_input("Approximate Size (cm)", min_value=1.0, step=0.5)
+        placement = st.selectbox("Body Placement", settings.get("placements", []))
+        color_type = st.selectbox("Color Type", TATTOO_COLOR_TYPES)
+        price  = st.number_input("Final Price (R)", min_value=0, step=100)
+        time_hours = st.number_input("Time Taken (in hours)", min_value=0.5, step=0.5)
+        submitted = st.form_submit_button("Save to Database")
+        if submitted:
+            image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
+            if not all([artist, style, size_cm > 0, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
+                st.error("Please upload an image and fill out all fields.")
+                return
+            with st.spinner("Uploading and saving..."):
+                buffer = BytesIO()
+                image_to_upload.save(buffer, format="PNG")
+                file_content = buffer.getvalue()
+                original_filename = uploaded_file.name if uploaded_file else "cropped_image.png"
+                file_name = f"{artist.replace(' ', '_')}_{date.today()}_{original_filename}"
+                supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
+                image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
+                supabase.table("tattoos").insert({"artist": artist, "style": style, "price": price, "time_hours": time_hours, "image_url": image_url, "size_cm": size_cm, "placement": placement, "color_type": color_type}).execute()
+                st.success(f"Successfully saved tattoo by {artist}!")
+                st.image(image_to_upload, caption="Uploaded Tattoo")
+
+def page_batch_upload():
+    st.header("📦 Batch Upload Tattoos")
+    uploaded_files = st.file_uploader("1. Upload all tattoo images for this session", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    if uploaded_files:
+        if 'batch_files' not in st.session_state or st.session_state.batch_files != uploaded_files:
+            st.session_state.batch_files = uploaded_files
+            st.session_state.details = [{} for _ in uploaded_files]
+            st.session_state.current_index = 0
+            st.session_state.cropped_images = [None] * len(uploaded_files)
+        total_files = len(st.session_state.batch_files)
+        current_index = st.session_state.current_index
+        if current_index < total_files:
+            st.write(f"--- \n### 2. Crop and Enter Details for Image {current_index + 1} of {total_files}")
+            current_file = st.session_state.batch_files[current_index]
+            img = Image.open(current_file).convert("RGB")
+            col1, col2 = st.columns(2)
+            with col1:
+                if CROP_AVAILABLE:
+                    cropped_img = st_cropper(img, realtime_update=True, box_color="#0015FF", key=f"crop_{current_index}")
+                    st.image(cropped_img, caption=f"Cropped Preview: {current_file.name}", use_container_width=True)
+                else:
+                    cropped_img = img
+                    st.image(img, caption=f"Image: {current_file.name}", use_container_width=True)
+            with col2:
+                with st.form(f"detail_form_{current_index}", clear_on_submit=True):
+                    details = {}
+                    details['artist'] = st.selectbox("Artist", settings.get("artists", []), key=f"art_{current_index}")
+                    details['style']  = st.selectbox("Style", settings.get("styles", []), key=f"sty_{current_index}")
+                    details['size_cm'] = st.number_input("Size (cm)", min_value=1.0, step=0.5, key=f"siz_{current_index}")
+                    details['placement'] = st.selectbox("Placement", settings.get("placements", []), key=f"pla_{current_index}")
+                    details['color_type'] = st.selectbox("Color", TATTOO_COLOR_TYPES, key=f"col_{current_index}")
+                    details['price'] = st.number_input("Price (R)", min_value=0, step=100, key=f"pri_{current_index}")
+                    details['time_hours'] = st.number_input("Time (hrs)", min_value=0.5, step=0.5, key=f"tim_{current_index}")
+                    if st.form_submit_button("✅ Save and Next"):
+                        st.session_state.details[current_index] = details
+                        st.session_state.cropped_images[current_index] = cropped_img
+                        st.session_state.current_index += 1
+                        st.rerun()
+        else:
+            st.success("All details entered! Ready to upload to Supabase.")
+            if st.button("🚀 Save All to Supabase"):
+                progress_bar = st.progress(0, text="Uploading...")
+                for i in range(total_files):
+                    original_file = st.session_state.batch_files[i]
+                    detail = st.session_state.details[i]
+                    cropped_image = st.session_state.cropped_images[i]
+                    with st.spinner(f"Uploading {original_file.name}..."):
+                        buffer = BytesIO()
+                        cropped_image.save(buffer, format="PNG")
+                        file_content = buffer.getvalue()
+                        file_name = f"{detail['artist'].replace(' ', '_')}_{date.today()}_{original_file.name}"
+                        supabase.storage.from_("tattoo-images").upload(file_name, file_content, file_options={"upsert": "true"})
+                        image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
+                        detail['image_url'] = image_url
+                        supabase.table("tattoos").insert(detail).execute()
+                    progress_bar.progress((i + 1) / total_files, text=f"Uploaded {original_file.name}")
+                st.success("Batch upload complete! Remember to run the embedding script.")
+                st.session_state.clear()
 
 def page_settings():
     st.header("⚙️ App Settings (Stored in Supabase)")
@@ -403,33 +360,4 @@ def page_settings():
             save_settings("placements", placements)
             st.success(f"Added '{new_placement}'")
             st.rerun()
-    placement_to_remove = st.selectbox("Remove Body Placement", ["-"] + placements, key="remove_placement")
-    if st.button("Remove Placement"):
-        if placement_to_remove != "-":
-            placements.remove(placement_to_remove)
-            save_settings("placements", placements)
-            st.success(f"Removed '{placement_to_remove}'")
-            st.rerun()
-
-# --- MAIN APP NAVIGATION ---
-def main():
-    if os.path.exists(LOGO_PATH):
-        st.sidebar.image(LOGO_PATH, width=100)
-    st.sidebar.title("Navigation")
-    
-    pages = {
-        "Quote Tattoo": page_quote_tattoo,
-        "Quote History": page_quote_history,
-        "Upload Single Tattoo": page_supabase_upload,
-        "Batch Upload": page_batch_upload,
-        "Settings": page_settings,
-    }
-    
-    choice = st.sidebar.radio("Go to", list(pages.keys()))
-    pages[choice]()
-
-    st.sidebar.markdown("---")
-    st.sidebar.info(f"App Version: {APP_VERSION}")
-
-if __name__ == "__main__":
-    main()
+    placement_to
