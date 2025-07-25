@@ -1,0 +1,3 @@
+cd "C:\Users\pauls\OneDrive\Working Files\tattoo_quoting_app"
+
+streamlit run generate_embeddings.py
