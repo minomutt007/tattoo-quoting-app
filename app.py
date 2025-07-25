@@ -13,10 +13,15 @@ from supabase import create_client
 from transformers import CLIPModel, CLIPProcessor
 
 # --- CONFIG ---
-APP_VERSION = "2.3.4"
+APP_VERSION = "2.6.0"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
+
+# Define tattoo attributes for dropdowns
+TATTOO_SIZES = ["Small (Palm-sized)", "Medium (Hand-sized)", "Large (Forearm-sized)", "Extra Large (Backpiece)"]
+TATTOO_PLACEMENTS = ["Arm", "Leg", "Torso", "Back", "Neck", "Hands/Feet"]
+TATTOO_COLOR_TYPES = ["Black & Grey", "Full Color"]
 
 # --- SECURELY INITIALIZE SUPABASE ---
 try:
@@ -68,7 +73,7 @@ with st.spinner("Loading AI model..."):
 @st.cache_data(ttl=600) # Cache tattoo data for 10 minutes
 def load_data_from_supabase():
     """Fetches tattoo data from Supabase, including pre-calculated embeddings."""
-    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding").execute()
+    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size, placement, color_type").execute()
     df = pd.DataFrame(response.data)
     
     if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
@@ -123,7 +128,7 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency,
 
     pdf.cell(0, 10, "Our Closest Matches:", ln=True)
     for _, row in top_matches.iterrows():
-         pdf.multi_cell(0, 8, f"- Artist: {row['artist']}, Style: {row['style']}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
+         pdf.multi_cell(0, 8, f"- Artist: {row['artist']}, Style: {row['style']}, Size: {row.get('size', 'N/A')}\n  Placement: {row.get('placement', 'N/A')}, Color: {row.get('color_type', 'N/A')}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
     
     output_path = os.path.join(IMAGE_DIR, "quote_report.pdf")
     pdf.output(output_path)
@@ -136,30 +141,41 @@ def page_quote_tattoo():
     
     uploaded_img = st.file_uploader("Upload a clear image of the tattoo or reference design", type=["jpg", "jpeg", "png"])
     
-    # --- THIS IS THE NEW SECTION ---
     st.markdown("---")
-    col1, col2, col3 = st.columns(3)
+    st.subheader("Filtering Options")
+    col1, col2 = st.columns(2)
     with col1:
-        artist_filter = st.selectbox("Filter by Artist", ["All"] + settings.get("artists", []))
+        size_filter = st.selectbox("Size", ["All"] + TATTOO_SIZES)
+        artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
     with col2:
-        compare_count = st.slider("Number to Compare", 1, 10, 3)
-    with col3:
+        placement_filter = st.selectbox("Body Placement", ["All"] + TATTOO_PLACEMENTS)
+        color_filter = st.selectbox("Color Type", ["All"] + TATTOO_COLOR_TYPES)
+
+    st.subheader("Quote Settings")
+    colA, colB = st.columns(2)
+    with colA:
+        compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3)
+    with colB:
         currency = st.selectbox("Currency", ["ZAR", "USD", "EUR"])
     st.markdown("---")
-    # --- END OF NEW SECTION ---
-
+    
     if uploaded_img:
         tattoo_data = load_data_from_supabase()
 
-        # --- THIS IS THE NEW FILTERING LOGIC ---
+        # Filter the data based on user's selections
+        if size_filter != "All":
+            tattoo_data = tattoo_data[tattoo_data['size'] == size_filter]
         if artist_filter != "All":
             tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
+        if placement_filter != "All":
+            tattoo_data = tattoo_data[tattoo_data['placement'] == placement_filter]
+        if color_filter != "All":
+            tattoo_data = tattoo_data[tattoo_data['color_type'] == color_filter]
         
         if tattoo_data[tattoo_data['embedding'].notna()].empty:
-            st.warning(f"No reference tattoos found for the selected filter ('{artist_filter}'). Please upload more tattoos or broaden your search.")
+            st.warning(f"No reference tattoos found for the selected filters. Please upload more tattoos or broaden your search.")
             return
-        # --- END OF NEW FILTERING LOGIC ---
-
+        
         image = Image.open(uploaded_img).convert("RGB")
         
         if CROP_AVAILABLE:
@@ -201,7 +217,12 @@ def page_quote_tattoo():
         for _, match in top_matches.iterrows():
             st.markdown("---")
             st.write(f"**Similarity Score:** {match['similarity']:.2f}")
-            st.image(match["image_url"], caption=f"Artist: {match['artist']}, Style: {match['style']}, Time: {match['time_hours']} hrs", use_container_width=True)
+            caption_text = (
+                f"Artist: {match['artist']}, Style: {match['style']}, "
+                f"Size: {match.get('size', 'N/A')}, Placement: {match.get('placement', 'N/A')}, "
+                f"Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs"
+            )
+            st.image(match["image_url"], caption=caption_text, use_container_width=True)
 
 def page_supabase_upload():
     st.header("📸 Upload New Tattoo")
@@ -222,6 +243,9 @@ def page_supabase_upload():
         st.write("3. Enter Tattoo Details")
         artist = st.selectbox("Artist", settings.get("artists", []))
         style  = st.selectbox("Style", settings.get("styles", []))
+        size   = st.selectbox("Size", TATTOO_SIZES)
+        placement = st.selectbox("Body Placement", TATTOO_PLACEMENTS)
+        color_type = st.selectbox("Color Type", TATTOO_COLOR_TYPES)
         price  = st.number_input("Final Price (R)", min_value=0, step=100)
         time_hours = st.number_input("Time Taken (in hours)", min_value=0.5, step=0.5)
         
@@ -230,7 +254,7 @@ def page_supabase_upload():
         if submitted:
             image_to_upload = cropped_img if cropped_img else (Image.open(uploaded_file) if uploaded_file else None)
 
-            if not all([artist, style, price > 0, time_hours > 0, image_to_upload]):
+            if not all([artist, style, size, placement, color_type, price > 0, time_hours > 0, image_to_upload]):
                 st.error("Please upload an image and fill out all fields.")
                 return
             
@@ -246,8 +270,8 @@ def page_supabase_upload():
                 image_url = supabase.storage.from_("tattoo-images").get_public_url(file_name)
 
                 supabase.table("tattoos").insert({
-                    "artist": artist, "style": style, "price": price,
-                    "time_hours": time_hours, "image_url": image_url
+                    "artist": artist, "style": style, "price": price, "time_hours": time_hours, 
+                    "image_url": image_url, "size": size, "placement": placement, "color_type": color_type
                 }).execute()
             
                 st.success(f"Successfully saved tattoo by {artist}!")
