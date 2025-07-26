@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.2.0 (Secure & Complete)"
+APP_VERSION = "4.2.1 (Stable Quoting)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -119,16 +119,25 @@ def page_quote_tattoo():
     st.header("Quote Your Tattoo")
     
     def clear_uploader():
+        # This function is called by the button's on_click
         if "quote_uploader" in st.session_state:
             st.session_state.quote_uploader = None
 
-    customer_name = st.text_input("Customer Name (Optional)")
+    # --- FIX: Moved the button and uploader to the top ---
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        customer_name = st.text_input("Customer Name (Optional)")
+    with col_b:
+        st.write("") # Spacer for alignment
+        st.write("") # Spacer for alignment
+        st.button("✨ Start New Quote", on_click=clear_uploader, use_container_width=True)
+    
     uploaded_img = st.file_uploader(
         "Upload a clear image of the tattoo or reference design", 
         type=["jpg", "jpeg", "png"],
         key="quote_uploader"
     )
-
+    
     if uploaded_img:
         st.markdown("---")
         st.subheader("Filtering Options")
@@ -177,29 +186,22 @@ def page_quote_tattoo():
         final_max_price = colB.number_input("Final Maximum Price (R)", value=int(max_price))
         final_price_range_str = f"R{final_min_price} - R{final_max_price}"
 
-        col_save, col_clear = st.columns(2)
-        with col_save:
-            if st.button("💾 Save Quote"):
-                with st.spinner("Saving quote..."):
-                    buffer = BytesIO()
-                    image.save(buffer, format="PNG")
-                    ref_image_content = buffer.getvalue()
-                    ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
-                    supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
-                    ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
-                    supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
-                    st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
-        
-        with col_clear:
-            st.button("Start New Quote", on_click=clear_uploader)
+        if st.button("💾 Save Quote"):
+            with st.spinner("Saving quote..."):
+                buffer = BytesIO()
+                image.save(buffer, format="PNG")
+                ref_image_content = buffer.getvalue()
+                ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
+                supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
+                ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
+                supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
+                st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
             
         with st.expander("Show AI Top Matches"):
             for _, match in top_matches.iterrows():
                 st.markdown("---")
                 caption_text = (f"Artist: {match['artist']}, Style: {match['style']}, Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs")
                 st.image(match["image_url"], caption=caption_text, use_container_width=True)
-    else:
-        st.button("Clear Selections", on_click=clear_uploader)
 
 def page_quote_history():
     st.header("📜 Quote History")
@@ -224,7 +226,7 @@ def page_quote_history():
 def page_supabase_upload():
     st.header("📸 Upload Single Tattoo")
     st.info("For uploading multiple tattoos at once, please use the 'Batch Upload' page.")
-    uploaded_file = st.file_uploader("1. Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader("1. Upload Finished Tattoo Image", type=["jpg", "jpeg", "png"], key="single_uploader")
     cropped_img = None
     if uploaded_file:
         img = Image.open(uploaded_file).convert("RGB")
@@ -263,7 +265,7 @@ def page_supabase_upload():
 
 def page_batch_upload():
     st.header("📦 Batch Upload Tattoos")
-    uploaded_files = st.file_uploader("1. Upload all tattoo images for this session", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("1. Upload all tattoo images for this session", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="batch_uploader")
     if uploaded_files:
         if 'batch_files' not in st.session_state or st.session_state.batch_files != uploaded_files:
             st.session_state.batch_files = uploaded_files
