@@ -122,7 +122,6 @@ def page_quote_tattoo():
         if "quote_uploader" in st.session_state:
             st.session_state.quote_uploader = None
 
-    # --- FIX: Moved the button and uploader to the top of the page ---
     col_a, col_b = st.columns([3, 1])
     with col_a:
         customer_name = st.text_input("Customer Name (Optional)")
