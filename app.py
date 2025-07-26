@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.2.3 (Final)"
+APP_VERSION = "4.3.0 (Checkbox Reset)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -118,88 +118,79 @@ def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency)
 def page_quote_tattoo():
     st.header("Quote Your Tattoo")
     
-    def clear_uploader():
-        if "quote_uploader" in st.session_state:
-            st.session_state.quote_uploader = None
-
-    col_a, col_b = st.columns([3, 1])
-    with col_a:
-        customer_name = st.text_input("Customer Name (Optional)")
-    with col_b:
-        st.write("") 
-        st.write("")
-        st.button("✨ Start New Quote", on_click=clear_uploader, use_container_width=True)
+    customer_name = st.text_input("Customer Name (Optional)")
     
-    uploaded_img = st.file_uploader(
-        "Upload a clear image of the tattoo or reference design", 
-        type=["jpg", "jpeg", "png"],
-        key="quote_uploader"
-    )
-    
-    if uploaded_img:
-        st.markdown("---")
-        st.subheader("Filtering Options")
-        size_range = st.slider("Filter by Size (cm)", min_value=1.0, max_value=40.0, value=(5.0, 15.0))
-        col1, col2 = st.columns(2)
-        with col1:
-            artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
-            placement_filter = st.selectbox("Body Placement", ["All"] + settings.get("placements", []))
-        with col2:
-            color_filter = st.selectbox("Color Type", ["All"] + TATTOO_COLOR_TYPES)
-            compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3, key="compare_slider")
+    # --- NEW CHECKBOX METHOD TO PREVENT ERRORS ---
+    if st.checkbox("Start a New Quote"):
+        uploaded_img = st.file_uploader(
+            "Upload a clear image of the tattoo or reference design", 
+            type=["jpg", "jpeg", "png"]
+        )
         
-        tattoo_data = load_data_from_supabase()
-        if not tattoo_data.empty and 'size_cm' in tattoo_data.columns and tattoo_data['size_cm'].notna().any():
-            tattoo_data = tattoo_data[(tattoo_data['size_cm'] >= size_range[0]) & (tattoo_data['size_cm'] <= size_range[1])]
-        if artist_filter != "All": tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
-        if placement_filter != "All": tattoo_data = tattoo_data[tattoo_data['placement'] == placement_filter]
-        if color_filter != "All": tattoo_data = tattoo_data[tattoo_data['color_type'] == color_filter]
-        
-        if tattoo_data.empty or tattoo_data[tattoo_data['embedding'].notna()].empty:
-            st.warning("No reference tattoos found for the selected filters.")
-            return
-        
-        image = Image.open(uploaded_img).convert("RGB")
-        if CROP_AVAILABLE: image = st_cropper(image, realtime_update=True, box_color="#0015FF")
-        st.image(image, caption="Your Tattoo Reference", use_container_width=True)
-
-        inputs = processor(images=image, return_tensors="pt", padding=True)
-        with torch.no_grad():
-            query_embedding = model.get_image_features(**inputs).squeeze(0)
-        db = tattoo_data[tattoo_data['embedding'].notna()].copy()
-        db_embeddings = torch.tensor(np.stack(db['embedding'].values))
-        similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
-        db['similarity'] = similarities.tolist()
-        top_matches = db.sort_values("similarity", ascending=False).head(compare_count)
-        
-        if top_matches.empty:
-            st.warning("Could not find any matching tattoos with the selected criteria.")
-            return
-
-        min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
-        st.markdown("---")
-        st.subheader("Final Quote")
-        colA, colB = st.columns(2)
-        final_min_price = colA.number_input("Final Minimum Price (R)", value=int(min_price))
-        final_max_price = colB.number_input("Final Maximum Price (R)", value=int(max_price))
-        final_price_range_str = f"R{final_min_price} - R{final_max_price}"
-
-        if st.button("💾 Save Quote"):
-            with st.spinner("Saving quote..."):
-                buffer = BytesIO()
-                image.save(buffer, format="PNG")
-                ref_image_content = buffer.getvalue()
-                ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
-                supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
-                ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
-                supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
-                st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
+        if uploaded_img:
+            st.markdown("---")
+            st.subheader("Filtering Options")
+            size_range = st.slider("Filter by Size (cm)", min_value=1.0, max_value=40.0, value=(5.0, 15.0))
+            col1, col2 = st.columns(2)
+            with col1:
+                artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
+                placement_filter = st.selectbox("Body Placement", ["All"] + settings.get("placements", []))
+            with col2:
+                color_filter = st.selectbox("Color Type", ["All"] + TATTOO_COLOR_TYPES)
+                compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3, key="compare_slider")
             
-        with st.expander("Show AI Top Matches"):
-            for _, match in top_matches.iterrows():
-                st.markdown("---")
-                caption_text = (f"Artist: {match['artist']}, Style: {match['style']}, Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs")
-                st.image(match["image_url"], caption=caption_text, use_container_width=True)
+            tattoo_data = load_data_from_supabase()
+            if not tattoo_data.empty and 'size_cm' in tattoo_data.columns and tattoo_data['size_cm'].notna().any():
+                tattoo_data = tattoo_data[(tattoo_data['size_cm'] >= size_range[0]) & (tattoo_data['size_cm'] <= size_range[1])]
+            if artist_filter != "All": tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
+            if placement_filter != "All": tattoo_data = tattoo_data[tattoo_data['placement'] == placement_filter]
+            if color_filter != "All": tattoo_data = tattoo_data[tattoo_data['color_type'] == color_filter]
+            
+            if tattoo_data.empty or tattoo_data[tattoo_data['embedding'].notna()].empty:
+                st.warning("No reference tattoos found for the selected filters.")
+                return
+            
+            image = Image.open(uploaded_img).convert("RGB")
+            if CROP_AVAILABLE: image = st_cropper(image, realtime_update=True, box_color="#0015FF")
+            st.image(image, caption="Your Tattoo Reference", use_container_width=True)
+
+            inputs = processor(images=image, return_tensors="pt", padding=True)
+            with torch.no_grad():
+                query_embedding = model.get_image_features(**inputs).squeeze(0)
+            db = tattoo_data[tattoo_data['embedding'].notna()].copy()
+            db_embeddings = torch.tensor(np.stack(db['embedding'].values))
+            similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
+            db['similarity'] = similarities.tolist()
+            top_matches = db.sort_values("similarity", ascending=False).head(compare_count)
+            
+            if top_matches.empty:
+                st.warning("Could not find any matching tattoos with the selected criteria.")
+                return
+
+            min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
+            st.markdown("---")
+            st.subheader("Final Quote")
+            colA, colB = st.columns(2)
+            final_min_price = colA.number_input("Final Minimum Price (R)", value=int(min_price))
+            final_max_price = colB.number_input("Final Maximum Price (R)", value=int(max_price))
+            final_price_range_str = f"R{final_min_price} - R{final_max_price}"
+
+            if st.button("💾 Save Quote"):
+                with st.spinner("Saving quote..."):
+                    buffer = BytesIO()
+                    image.save(buffer, format="PNG")
+                    ref_image_content = buffer.getvalue()
+                    ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
+                    supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
+                    ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
+                    supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
+                    st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
+                
+            with st.expander("Show AI Top Matches"):
+                for _, match in top_matches.iterrows():
+                    st.markdown("---")
+                    caption_text = (f"Artist: {match['artist']}, Style: {match['style']}, Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs")
+                    st.image(match["image_url"], caption=caption_text, use_container_width=True)
 
 def page_quote_history():
     st.header("📜 Quote History")
