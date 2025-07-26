@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "2.2.0 "
+APP_VERSION = "4.2.0 (Secure & Complete)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -128,7 +128,7 @@ def page_quote_tattoo():
         type=["jpg", "jpeg", "png"],
         key="quote_uploader"
     )
-    
+
     if uploaded_img:
         st.markdown("---")
         st.subheader("Filtering Options")
@@ -198,6 +198,8 @@ def page_quote_tattoo():
                 st.markdown("---")
                 caption_text = (f"Artist: {match['artist']}, Style: {match['style']}, Size: {match.get('size_cm', 'N/A')} cm, Placement: {match.get('placement', 'N/A')}, Color: {match.get('color_type', 'N/A')}, Time: {match['time_hours']} hrs")
                 st.image(match["image_url"], caption=caption_text, use_container_width=True)
+    else:
+        st.button("Clear Selections", on_click=clear_uploader)
 
 def page_quote_history():
     st.header("📜 Quote History")
