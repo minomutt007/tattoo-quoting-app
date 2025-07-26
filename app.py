@@ -119,7 +119,6 @@ def page_quote_tattoo():
     st.header("Quote Your Tattoo")
     
     def clear_uploader():
-        # This function is called by the button's on_click to reset the uploader
         if "quote_uploader" in st.session_state:
             st.session_state.quote_uploader = None
 
