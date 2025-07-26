@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import torch
@@ -14,7 +15,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.2.3 (Final)"
+APP_VERSION = "4.2.3 (Stable Quoting)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -404,3 +405,43 @@ if st.session_state['authenticated']:
     main_app()
 else:
     show_login_form()
+``` False
+
+# --- DATA & MODEL LOADING ---
+@st.cache_data(ttl=300)
+def load_settings():
+    response = supabase.table("app_settings").select("setting_name, setting_value").execute()
+    settings_data = {item['setting_name']: item['setting_value'] for item in response.data}
+    defaults = {
+        "artists": ["Tally", "Alex", "Jay"], "styles": ["Line", "Color", "Realism"],
+        "placements": ["Arm", "Leg", "Torso", "Back"], "model_variant": "openai/clip-vit-base-patch32"
+    }
+    for key, value in defaults.items():
+        if key not in settings_data:
+            supabase.table("app_settings").insert({"setting_name": key, "setting_value": value}).execute()
+            settings_data[key] = value
+    return settings_data
+
+settings = load_settings()
+
+@st.cache_resource
+def load_clip_model():
+    model = CLIPModel.from_pretrained(settings["model_variant"])
+    processor = CLIPProcessor.from_pretrained(settings["model_variant"])
+    return model, processor
+
+with st.spinner("Loading AI model..."):
+    model, processor = load_clip_model()
+
+@st.cache_data(ttl=600)
+def load_data_from_supabase():
+    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size_cm, placement, color_type").execute()
+    df = pd.DataFrame(response.data)
+    if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
+        df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x)) if pd.notna(x) else None)
+    else:
+        df['embedding'] = None
+    return df
+
+# --- HELPER FUNCTIONS ---
+def save_settings(key
