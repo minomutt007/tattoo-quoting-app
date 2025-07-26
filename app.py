@@ -121,7 +121,7 @@ def page_quote_tattoo():
     customer_name = st.text_input("Customer Name (Optional)")
     
     # --- NEW CHECKBOX METHOD TO PREVENT ERRORS ---
-    if st.checkbox("Start a New Quote"):
+    if st.checkbox("Button needs to be slected to Quote and reselected for each new quote"):
         uploaded_img = st.file_uploader(
             "Upload a clear image of the tattoo or reference design", 
             type=["jpg", "jpeg", "png"]
