@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.2.3 (Final)"
+APP_VERSION = "4.2.2 (Stable Quoting)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -122,7 +122,6 @@ def page_quote_tattoo():
         if "quote_uploader" in st.session_state:
             st.session_state.quote_uploader = None
 
-    # --- FIX: MOVED BUTTON AND UPLOADER TO THE TOP OF THE PAGE ---
     col_a, col_b = st.columns([3, 1])
     with col_a:
         customer_name = st.text_input("Customer Name (Optional)")
@@ -405,4 +404,3 @@ if st.session_state['authenticated']:
     main_app()
 else:
     show_login_form()
-# --- APP
