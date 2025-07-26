@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.2.1 (Stable Quoting)"
+APP_VERSION = "4.2.2 (Stable Quoting)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -119,17 +119,15 @@ def page_quote_tattoo():
     st.header("Quote Your Tattoo")
     
     def clear_uploader():
-        # This function is called by the button's on_click
         if "quote_uploader" in st.session_state:
             st.session_state.quote_uploader = None
 
-    # --- FIX: Moved the button and uploader to the top ---
     col_a, col_b = st.columns([3, 1])
     with col_a:
         customer_name = st.text_input("Customer Name (Optional)")
     with col_b:
-        st.write("") # Spacer for alignment
-        st.write("") # Spacer for alignment
+        st.write("") 
+        st.write("")
         st.button("✨ Start New Quote", on_click=clear_uploader, use_container_width=True)
     
     uploaded_img = st.file_uploader(
