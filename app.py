@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "1.3.2"
+APP_VERSION = "4.4.0 (Final)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -384,6 +384,45 @@ def page_settings():
             placements.remove(placement_to_remove)
             save_settings("placements", placements)
             st.success(f"Removed '{placement_to_remove}'")
+            st.rerun()
+    st.markdown("---")
+    st.subheader("Artist Price Adjustment")
+    selected_artist = st.selectbox("Select Artist to Adjust Prices", artists)
+    adjustment_type = st.radio(
+        "Adjustment Type",
+        ["Percentage (%) Increase", "Fixed Amount (R) Increase"],
+        horizontal=True
+    )
+    if adjustment_type == "Percentage (%) Increase":
+        adj_value = st.number_input("Increase by Percentage (%)", min_value=0.0, step=0.5, format="%.1f")
+    else:
+        adj_value = st.number_input("Increase by Fixed Amount (R)", min_value=0, step=50)
+    if st.button("Apply Price Adjustment"):
+        st.session_state.adjustment_details = {
+            "artist": selected_artist, "type": adjustment_type, "value": adj_value
+        }
+    if 'adjustment_details' in st.session_state:
+        details = st.session_state.adjustment_details
+        artist = details['artist']
+        adj_type = details['type']
+        value = details['value']
+        st.warning(f"**Confirmation Needed:** You are about to increase all prices for **{artist}** by **{value}{'%' if '%' in adj_type else ' R'}**. This action cannot be undone.")
+        if st.button("Confirm and Update Prices"):
+            with st.spinner(f"Updating prices for {artist}..."):
+                response = supabase.table("tattoos").select("id, price").eq("artist", artist).execute()
+                tattoos_to_update = response.data
+                progress_bar = st.progress(0, text="Starting update...")
+                for i, tattoo in enumerate(tattoos_to_update):
+                    old_price = tattoo['price']
+                    if '%' in adj_type:
+                        new_price = old_price * (1 + (value / 100))
+                    else:
+                        new_price = old_price + value
+                    supabase.table("tattoos").update({"price": round(new_price)}).eq("id", tattoo["id"]).execute()
+                    progress_bar.progress((i + 1) / len(tattoos_to_update), text=f"Updated tattoo {i+1}/{len(tattoos_to_update)}")
+            st.success(f"Successfully updated {len(tattoos_to_update)} tattoos for {artist}!")
+            del st.session_state.adjustment_details
+            st.cache_data.clear()
             st.rerun()
 
 # --- MAIN APP LOGIC ---
