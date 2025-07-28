@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "4.3.0 (Checkbox Reset)"
+APP_VERSION = "4.3.2 (Manual Time)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -120,8 +120,7 @@ def page_quote_tattoo():
     
     customer_name = st.text_input("Customer Name (Optional)")
     
-    # --- NEW CHECKBOX METHOD TO PREVENT ERRORS ---
-    if st.checkbox("Button needs to be slected to Quote and reselected for each new quote"):
+    if st.checkbox("Start a New Quote"):
         uploaded_img = st.file_uploader(
             "Upload a clear image of the tattoo or reference design", 
             type=["jpg", "jpeg", "png"]
@@ -168,12 +167,27 @@ def page_quote_tattoo():
                 return
 
             min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
+            min_time, max_time = top_matches["time_hours"].min(), top_matches["time_hours"].max()
+
             st.markdown("---")
             st.subheader("Final Quote")
+            
+            col_price, col_time = st.columns(2)
+            with col_price:
+                st.metric("Estimated Price Range (ZAR)", f"R{min_price} - R{max_price}")
+            with col_time:
+                st.metric("Estimated Time Range", f"{min_time:.1f} - {max_time:.1f} hrs")
+
+            st.subheader("Manual Quote Adjustment")
             colA, colB = st.columns(2)
             final_min_price = colA.number_input("Final Minimum Price (R)", value=int(min_price))
             final_max_price = colB.number_input("Final Maximum Price (R)", value=int(max_price))
+            
+            final_min_time = colA.number_input("Final Minimum Time (hrs)", value=float(min_time), step=0.5)
+            final_max_time = colB.number_input("Final Maximum Time (hrs)", value=float(max_time), step=0.5)
+            
             final_price_range_str = f"R{final_min_price} - R{final_max_price}"
+            final_time_range_str = f"{final_min_time} - {final_max_time} hrs"
 
             if st.button("💾 Save Quote"):
                 with st.spinner("Saving quote..."):
@@ -183,7 +197,13 @@ def page_quote_tattoo():
                     ref_image_name = f"{customer_name.replace(' ', '_') or 'quote'}_{date.today()}_{uploaded_img.name}"
                     supabase.storage.from_("quote-references").upload(ref_image_name, ref_image_content, file_options={"upsert": "true"})
                     ref_image_url = supabase.storage.from_("quote-references").get_public_url(ref_image_name)
-                    supabase.table("quotes").insert({"customer_name": customer_name if customer_name else "N/A", "reference_image_url": ref_image_url, "final_price_range": final_price_range_str}).execute()
+                    
+                    supabase.table("quotes").insert({
+                        "customer_name": customer_name if customer_name else "N/A",
+                        "reference_image_url": ref_image_url,
+                        "final_price_range": final_price_range_str,
+                        "final_time_range": final_time_range_str
+                    }).execute()
                     st.success(f"Quote for {customer_name or 'N/A'} saved successfully!")
                 
             with st.expander("Show AI Top Matches"):
@@ -210,7 +230,9 @@ def page_quote_history():
         with col2:
             st.write(f"**Customer:** {row['customer_name']}")
             st.write(f"**Date:** {pd.to_datetime(row['quote_date']).strftime('%Y-%m-%d')}")
-            st.write(f"**Quoted Range:** {row['final_price_range']}")
+            st.write(f"**Quoted Price Range:** {row['final_price_range']}")
+            if 'final_time_range' in row and row['final_time_range']:
+                st.write(f"**Quoted Time Range:** {row['final_time_range']}")
 
 def page_supabase_upload():
     st.header("📸 Upload Single Tattoo")
