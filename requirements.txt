@@ -1,0 +1,9 @@
+streamlit
+pandas
+torch
+transformers
+supabase
+fpdf
+streamlit-cropper
+numpy
+Pillow
