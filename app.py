@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0 "
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -65,7 +65,8 @@ with st.spinner("Loading AI model..."):
 
 @st.cache_data(ttl=600)
 def load_data_from_supabase():
-    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size_cm, placement, color_type").execute()
+    # UPDATED to fetch the new 'ai_caption' column
+    response = supabase.table("tattoos").select("artist, style, price, time_hours, image_url, embedding, size_cm, placement, color_type, ai_caption").execute()
     df = pd.DataFrame(response.data)
     if not df.empty and 'embedding' in df.columns and pd.notna(df['embedding']).any():
         df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x)) if pd.notna(x) else None)
@@ -319,6 +320,12 @@ def page_batch_upload():
                     details['color_type'] = st.selectbox("Color", TATTOO_COLOR_TYPES, key=f"col_{current_index}")
                     details['price'] = st.number_input("Price (R)", min_value=0, step=100, key=f"pri_{current_index}")
                     details['time_hours'] = st.number_input("Time (hrs)", min_value=0.5, step=0.5, key=f"tim_{current_index}")
+                    
+                    # --- NEW FEATURE ---
+                    details['ai_caption'] = st.text_area("AI Training Description", key=f"cap_{current_index}", height=150,
+                        placeholder="e.g., A black and grey realism tattoo of a lion's face with a crown, on a forearm.")
+                    # --- END NEW FEATURE ---
+                    
                     if st.form_submit_button("✅ Save and Next"):
                         st.session_state.details[current_index] = details
                         st.session_state.cropped_images[current_index] = cropped_img
