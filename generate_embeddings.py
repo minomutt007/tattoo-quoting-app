@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import torch
@@ -14,7 +13,7 @@ try:
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except KeyError:
+except (KeyError, AttributeError):
     print("ERROR: Supabase credentials are not set in st.secrets. Please add them.")
     st.stop()
 
@@ -32,7 +31,7 @@ def generate_and_update_embeddings():
     response = supabase.table("tattoos").select("id, image_url, embedding").execute()
     df = pd.DataFrame(response.data)
     
-    # --- FIX: Handle empty table ---
+    # Handle empty table
     if df.empty:
         print("The 'tattoos' table is empty. Nothing to process.")
         return
