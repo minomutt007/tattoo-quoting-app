@@ -73,12 +73,14 @@ if st.checkbox("Start a New Quote"):
                 min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
                 min_time, max_time = top_matches["time_hours"].min(), top_matches["time_hours"].max()
 
+                # --- NEW FEATURE LOGIC ---
                 complicated_placements = settings.get("complicated_placements", {})
                 time_increase_percent = complicated_placements.get(placement_filter, 0)
 
                 if time_increase_percent > 0:
                     min_time *= (1 + time_increase_percent / 100)
                     max_time *= (1 + time_increase_percent / 100)
+                # --- END NEW FEATURE LOGIC ---
 
                 st.markdown("---")
                 st.subheader("Final Quote")
