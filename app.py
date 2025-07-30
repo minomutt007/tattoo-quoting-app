@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "1.4.0 "
+APP_VERSION = "4.5.1 (Final)"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
@@ -43,7 +43,8 @@ def load_settings():
     settings_data = {item['setting_name']: item['setting_value'] for item in response.data}
     defaults = {
         "artists": ["Tally", "Alex", "Jay"], "styles": ["Line", "Color", "Realism"],
-        "placements": ["Arm", "Leg", "Torso", "Back"], "model_variant": "openai/clip-vit-base-patch32"
+        "placements": ["Arm", "Leg", "Torso", "Back"], "model_variant": "openai/clip-vit-base-patch32",
+        "complicated_placements": {"Neck": 15, "Ribs": 20}
     }
     for key, value in defaults.items():
         if key not in settings_data:
@@ -129,18 +130,19 @@ def page_quote_tattoo():
         if uploaded_img:
             st.markdown("---")
             st.subheader("Filtering Options")
-            size_range = st.slider("Filter by Size (cm)", min_value=1.0, max_value=40.0, value=(5.0, 15.0))
+            size_range = st.slider("Filter by Size (cm)", 1.0, 40.0, (5.0, 15.0))
             col1, col2 = st.columns(2)
             with col1:
                 artist_filter = st.selectbox("Artist", ["All"] + settings.get("artists", []))
                 placement_filter = st.selectbox("Body Placement", ["All"] + settings.get("placements", []))
             with col2:
                 color_filter = st.selectbox("Color Type", ["All"] + TATTOO_COLOR_TYPES)
-                compare_count = st.slider("Number of Tattoos to Compare", 1, 10, 3, key="compare_slider")
+                compare_count = st.slider("Number to Compare", 1, 10, 3)
             
             tattoo_data = load_data_from_supabase()
+            
             if not tattoo_data.empty and 'size_cm' in tattoo_data.columns and tattoo_data['size_cm'].notna().any():
-                tattoo_data = tattoo_data[(tattoo_data['size_cm'] >= size_range[0]) & (tattoo_data['size_cm'] <= size_range[1])]
+                tattoo_data = tattoo_data[tattoo_data['size_cm'].between(size_range[0], size_range[1])]
             if artist_filter != "All": tattoo_data = tattoo_data[tattoo_data['artist'] == artist_filter]
             if placement_filter != "All": tattoo_data = tattoo_data[tattoo_data['placement'] == placement_filter]
             if color_filter != "All": tattoo_data = tattoo_data[tattoo_data['color_type'] == color_filter]
@@ -169,9 +171,19 @@ def page_quote_tattoo():
             min_price, max_price = top_matches["price"].min(), top_matches["price"].max()
             min_time, max_time = top_matches["time_hours"].min(), top_matches["time_hours"].max()
 
+            complicated_placements = settings.get("complicated_placements", {})
+            time_increase_percent = 0
+            if placement_filter in complicated_placements:
+                time_increase_percent = complicated_placements[placement_filter]
+                min_time *= (1 + time_increase_percent / 100)
+                max_time *= (1 + time_increase_percent / 100)
+
             st.markdown("---")
             st.subheader("Final Quote")
             
+            if time_increase_percent > 0:
+                st.warning(f"Note: A {time_increase_percent}% time increase has been added for the selected body part: **{placement_filter}**.")
+
             col_price, col_time = st.columns(2)
             with col_price:
                 st.metric("Estimated Price Range (ZAR)", f"R{min_price} - R{max_price}")
@@ -187,7 +199,7 @@ def page_quote_tattoo():
             final_max_time = colB.number_input("Final Maximum Time (hrs)", value=float(max_time), step=0.5)
             
             final_price_range_str = f"R{final_min_price} - R{final_max_price}"
-            final_time_range_str = f"{final_min_time} - {final_max_time} hrs"
+            final_time_range_str = f"{final_min_time:.1f} - {final_max_time:.1f} hrs"
 
             if st.button("💾 Save Quote"):
                 with st.spinner("Saving quote..."):
@@ -385,6 +397,29 @@ def page_settings():
             save_settings("placements", placements)
             st.success(f"Removed '{placement_to_remove}'")
             st.rerun()
+    st.markdown("---")
+    st.subheader("Manage Complicated Placements")
+    complicated_placements = settings.get("complicated_placements", {})
+    col1, col2 = st.columns(2)
+    with col1:
+        placement_to_add = st.selectbox("Select Placement", placements)
+    with col2:
+        percent_increase = st.number_input("Time Increase (%)", min_value=0, max_value=200, value=10, step=5)
+    if st.button("Add/Update Complicated Placement"):
+        complicated_placements[placement_to_add] = percent_increase
+        save_settings("complicated_placements", complicated_placements)
+        st.success(f"Set {placement_to_add} to a {percent_increase}% time increase.")
+        st.rerun()
+    if complicated_placements:
+        st.write("Current Complicated Placements:")
+        for placement, pct in complicated_placements.items():
+            col_a, col_b = st.columns([3, 1])
+            col_a.write(f"- **{placement}**: +{pct}% time")
+            if col_b.button("Remove", key=f"remove_comp_{placement}"):
+                del complicated_placements[placement]
+                save_settings("complicated_placements", complicated_placements)
+                st.success(f"Removed {placement}.")
+                st.rerun()
     st.markdown("---")
     st.subheader("Artist Price Adjustment")
     selected_artist = st.selectbox("Select Artist to Adjust Prices", artists)
