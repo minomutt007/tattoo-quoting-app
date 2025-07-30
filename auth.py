@@ -1,8 +1,7 @@
 import streamlit as st
-import os  # <-- THIS LINE WAS ADDED
+import os
 from supabase import create_client
 
-# Initialize Supabase client using secrets
 try:
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
@@ -15,7 +14,6 @@ def login_user(email, password):
         user = supabase.auth.sign_in_with_password({"email": email, "password": password})
         st.session_state['authenticated'] = True
         st.session_state['user_email'] = user.user.email
-        st.success("Logged in successfully!")
         st.rerun()
     except Exception as e:
         st.error(f"Login failed. Please check your credentials.")
