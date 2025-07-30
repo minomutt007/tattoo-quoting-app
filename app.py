@@ -14,7 +14,7 @@ from transformers import CLIPModel, CLIPProcessor
 from auth import show_login_form, logout_user
 
 # --- CONFIG ---
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 IMAGE_DIR = "images"
 os.makedirs(IMAGE_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(IMAGE_DIR, "sally_mustang_logo.jpg")
