@@ -10,18 +10,15 @@ st.set_page_config(page_title="Tattoo Quoting App", layout="wide")
 
 # --- MAIN APP LOGIC ---
 def main_app():
-    """This function runs the main application after the user has logged in."""
     if os.path.exists(LOGO_PATH):
         st.sidebar.image(LOGO_PATH, width=100)
     
     st.sidebar.write(f"Logged in as: {st.session_state.get('user_email', '')}")
     st.sidebar.button("Logout", on_click=logout_user)
-    st.sidebar.markdown("---")
     
     st.title("Welcome to the Tattoo Quoting App")
     st.write("Please select a page from the sidebar to get started.")
 
-    st.sidebar.markdown("---")
     st.sidebar.info(f"App Version: {APP_VERSION}")
 
 # --- APP ENTRY POINT ---
