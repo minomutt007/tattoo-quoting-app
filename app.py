@@ -13,7 +13,6 @@ def main_app():
     """This function runs the main application after the user has logged in."""
     if os.path.exists(LOGO_PATH):
         st.sidebar.image(LOGO_PATH, width=100)
-    st.sidebar.title("Navigation")
     
     st.sidebar.write(f"Logged in as: {st.session_state.get('user_email', '')}")
     st.sidebar.button("Logout", on_click=logout_user)
