@@ -25,8 +25,6 @@ def logout_user():
     st.rerun()
 
 def show_login_form():
-    if os.path.exists("images/sally_mustang_logo.jpg"):
-        st.image("images/sally_mustang_logo.jpg", width=200)
     st.header("Tattoo Quoting App Login")
     with st.form("login_form"):
         email = st.text_input("Email")
