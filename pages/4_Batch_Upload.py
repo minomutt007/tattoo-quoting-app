@@ -40,6 +40,7 @@ if uploaded_files:
         with col2:
             with st.form(f"detail_form_{current_index}", clear_on_submit=True):
                 details = {}
+                # --- FIX: Removed all on_change callbacks from widgets inside the form ---
                 details['artist'] = st.selectbox("Artist", settings.get("artists", []), key=f"art_{current_index}")
                 details['style']  = st.selectbox("Style", settings.get("styles", []), key=f"sty_{current_index}")
                 details['size_cm'] = st.number_input("Size (cm)", min_value=1.0, step=0.5, key=f"siz_{current_index}")
