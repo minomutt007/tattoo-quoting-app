@@ -16,30 +16,43 @@ def get_live_rates(base="ZAR"):
     except requests.RequestException:
         return {"USD": 0.055, "EUR": 0.051}
 
-def generate_pdf_report(uploaded_image_path, top_matches, price_range, currency):
+def generate_pdf_report(uploaded_image_path, top_matches, price_range, time_range, currency):
+    """Generates a PDF report for the tattoo quote."""
     pdf = FPDF()
     pdf.add_page()
+    
+    # Header
     if os.path.exists(LOGO_PATH):
         pdf.image(LOGO_PATH, x=10, y=8, w=30)
     pdf.set_font("Arial", "B", 20)
     pdf.cell(0, 15, "Tattoo Quote Report", ln=True, align="C")
     pdf.ln(15)
+
+    # Main Info
     pdf.set_font("Arial", "", 12)
     pdf.cell(0, 8, f"Date: {date.today()}", ln=True)
     pdf.cell(0, 8, f"Estimated Price Range (ZAR): R{price_range[0]} - R{price_range[1]}", ln=True)
+    pdf.cell(0, 8, f"Estimated Time Range: {time_range[0]:.1f} - {time_range[1]:.1f} hrs", ln=True)
+    
     if currency != "ZAR":
         rates = get_live_rates("ZAR")
         converted_range = (price_range[0] * rates.get(currency, 1), price_range[1] * rates.get(currency, 1))
         pdf.cell(0, 8, f"Converted Price ({currency}): {converted_range[0]:.2f} - {converted_range[1]:.2f}", ln=True)
     pdf.ln(10)
+
+    # User's Image
     pdf.set_font("Arial", "B", 12)
     pdf.cell(0, 10, "Your Reference Image:", ln=True)
     if os.path.exists(uploaded_image_path):
         pdf.image(uploaded_image_path, w=80)
     pdf.ln(5)
+
+    # Top Matches
     pdf.cell(0, 10, "Our Closest Matches:", ln=True)
+    pdf.set_font("Arial", "", 10)
     for _, row in top_matches.iterrows():
-         pdf.multi_cell(0, 8, f"- Artist: {row['artist']}, Style: {row['style']}, Size: {row.get('size_cm', 'N/A')} cm\n  Placement: {row.get('placement', 'N/A')}, Color: {row.get('color_type', 'N/A')}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
+         pdf.multi_cell(0, 6, f"- Artist: {row['artist']}, Style: {row['style']}, Size: {row.get('size_cm', 'N/A')} cm\n  Placement: {row.get('placement', 'N/A')}, Color: {row.get('color_type', 'N/A')}\n  Price: R{row['price']}, Time: {row.get('time_hours', 'N/A')} hrs")
+    
     output_path = os.path.join(IMAGE_DIR, "quote_report.pdf")
     pdf.output(output_path)
     return output_path
