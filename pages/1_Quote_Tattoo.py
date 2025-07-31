@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import torch
 import os
+import numpy as np  # <-- THIS LINE WAS ADDED
 from PIL import Image
 from io import BytesIO
 from transformers import CLIPModel, CLIPProcessor
